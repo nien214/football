@@ -277,6 +277,16 @@ function isPortraitViewport() {
   return window.matchMedia("(orientation: portrait)").matches;
 }
 
+function isLikelyMobileBrowser() {
+  const ua = String(navigator.userAgent || "").toLowerCase();
+  const mobileUa = /android|iphone|ipod|blackberry|mobile|windows phone/.test(ua);
+  const iPadLike =
+    /ipad/.test(ua) ||
+    (navigator.platform === "MacIntel" && Number(navigator.maxTouchPoints || 0) > 1);
+  const coarseTouch = window.matchMedia("(pointer: coarse)").matches;
+  return mobileUa || iPadLike || coarseTouch;
+}
+
 function shouldShowVirtualControls() {
   return gameActive && isVStickInputMode() && isPortraitViewport();
 }
@@ -357,7 +367,7 @@ function populateCountries() {
       const option = document.createElement("option");
       option.value = `${flag} ${name}`;
       option.textContent = `${flag} ${name}`;
-      if (name === "United States") {
+      if (name === "Argentina") {
         option.selected = true;
       }
       group.appendChild(option);
@@ -1963,6 +1973,9 @@ window.addEventListener("orientationchange", () => {
 
 populateCountries();
 setMode("cpu");
-setInputMode(inputModeInputs.find((input) => input.checked)?.value || "mouse");
+const initialInputMode = isLikelyMobileBrowser()
+  ? "vstick"
+  : inputModeInputs.find((input) => input.checked)?.value || "mouse";
+setInputMode(initialInputMode);
 render();
 void preloadOnInitialLaunch();
