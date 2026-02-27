@@ -18,18 +18,21 @@ body {
   background: radial-gradient(circle at top, #1a4f2f, var(--bg) 65%);
   color: var(--text);
   min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
 }
 
 .app {
-  width: min(1060px, 98vw);
-  margin: 12px auto;
+  width: min(1000px, 98vw);
   position: relative;
 }
 
 .field-wrap {
   position: relative;
-  width: min(1000px, 100%);
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
 }
 
 #pitch {
@@ -45,13 +48,13 @@ body {
 }
 
 .panel {
-  position: fixed;
+  position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  z-index: 5;
-  width: min(430px, calc(100vw - 32px));
-  max-height: calc(100vh - 32px);
+  z-index: 9;
+  width: min(430px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
   overflow: auto;
   background: rgba(244, 236, 216, 0.95);
   border: 2px solid var(--panel-border);
@@ -224,24 +227,13 @@ body {
   pointer-events: none;
 }
 
-.preload-versus {
-  display: flex;
-  align-items: center;
-  gap: 54px;
-}
-
-.preload-flag {
-  font-size: 160px;
-  line-height: 1;
-  filter: drop-shadow(0 8px 15px rgba(0, 0, 0, 0.45));
-}
-
-.preload-vs {
+.preload-title {
   color: #fff8ce;
-  font-size: 74px;
+  font-size: 92px;
   font-weight: 800;
-  letter-spacing: 2px;
+  letter-spacing: 1px;
   text-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+  line-height: 1;
 }
 
 .preload-loading {
@@ -334,16 +326,8 @@ body {
     font-size: 27px;
   }
 
-  .preload-versus {
-    gap: 24px;
-  }
-
-  .preload-flag {
-    font-size: 108px;
-  }
-
-  .preload-vs {
-    font-size: 50px;
+  .preload-title {
+    font-size: 56px;
   }
 
   .preload-loading {

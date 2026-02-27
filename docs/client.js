@@ -86,8 +86,6 @@ const roomCodeBox = document.getElementById("roomCodeBox");
 const goalGifOverlay = document.getElementById("goalGifOverlay");
 const goalGif = document.getElementById("goalGif");
 const preloadOverlay = document.getElementById("preloadOverlay");
-const preloadFlagA = document.getElementById("preloadFlagA");
-const preloadFlagB = document.getElementById("preloadFlagB");
 const preloadLoading = document.getElementById("preloadLoading");
 const preloadDots = document.getElementById("preloadDots");
 
@@ -269,13 +267,11 @@ function randomCpuCountry() {
   return CPU_COUNTRIES[index] || "🇧🇷 Brazil";
 }
 
-function showPreloadOverlay(countryA, countryB) {
-  if (!preloadOverlay || !preloadFlagA || !preloadFlagB || !preloadLoading || !preloadDots) {
+function showPreloadOverlay() {
+  if (!preloadOverlay || !preloadLoading || !preloadDots) {
     return;
   }
 
-  preloadFlagA.textContent = extractFlag(countryA);
-  preloadFlagB.textContent = extractFlag(countryB);
   preloadDotCount = 1;
   preloadDots.textContent = ".";
   preloadOverlay.classList.remove("hidden");
@@ -326,9 +322,7 @@ async function ensureAssetsPreloaded(preview = null) {
     return;
   }
 
-  const leftCountry = preview?.leftCountry || countrySelect.value || "Unknown";
-  const rightCountry = preview?.rightCountry || "Unknown";
-  showPreloadOverlay(leftCountry, rightCountry);
+  showPreloadOverlay();
 
   try {
     if (assetsPreloadPromise) {
