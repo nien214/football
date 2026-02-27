@@ -4,6 +4,13 @@ const GOAL_WIDTH = 220;
 const KEYBOARD_CURSOR_SPEED = 420;
 const REAL_MATCH_MS = 2 * 60 * 1000;
 const VIRTUAL_MATCH_SECONDS = 90 * 60;
+const REMOTE_API_BASE = "https://football-2kxo.onrender.com";
+const API_BASE =
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1" ||
+  window.location.hostname === "0.0.0.0"
+    ? ""
+    : REMOTE_API_BASE;
 
 const COUNTRY_GROUPS = {
   Africa: [
@@ -101,25 +108,25 @@ const CPU_COUNTRIES = [
 ];
 
 const CELEBRATION_GIFS = [
-  "/assets/celebrate1.gif",
-  "/assets/celebrate2.gif",
-  "/assets/celebrate3.gif",
-  "/assets/celebrate4.gif"
+  "assets/celebrate1.gif",
+  "assets/celebrate2.gif",
+  "assets/celebrate3.gif",
+  "assets/celebrate4.gif"
 ];
 const REQUIRED_ASSETS = [
   ...CELEBRATION_GIFS,
-  "/assets/crowd.mp3",
-  "/assets/goal.mp3",
-  "/assets/whistle.mp3"
+  "assets/crowd.mp3",
+  "assets/goal.mp3",
+  "assets/whistle.mp3"
 ];
-const crowdAudio = new Audio("/assets/crowd.mp3");
+const crowdAudio = new Audio("assets/crowd.mp3");
 crowdAudio.loop = true;
 crowdAudio.preload = "auto";
 crowdAudio.volume = 0.42;
-const goalAudioTemplate = new Audio("/assets/goal.mp3");
+const goalAudioTemplate = new Audio("assets/goal.mp3");
 goalAudioTemplate.preload = "auto";
 goalAudioTemplate.volume = 0.88;
-const whistleAudioTemplate = new Audio("/assets/whistle.mp3");
+const whistleAudioTemplate = new Audio("assets/whistle.mp3");
 whistleAudioTemplate.preload = "auto";
 whistleAudioTemplate.volume = 0.92;
 
@@ -173,6 +180,10 @@ function setStatus(text, isError = false) {
   statusText.textContent = text;
   statusText.dataset.error = isError ? "1" : "0";
   lastStatus = text;
+}
+
+function apiUrl(path) {
+  return `${API_BASE}${path}`;
 }
 
 function setMode(nextMode) {
@@ -431,7 +442,7 @@ function showResultOverlay(winnerText) {
 }
 
 async function apiPost(path, payload) {
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload || {})
@@ -472,7 +483,7 @@ async function pollState() {
   }
   pollInFlight = true;
   try {
-    const response = await fetch(`/api/state?token=${encodeURIComponent(token)}`, {
+    const response = await fetch(apiUrl(`/api/state?token=${encodeURIComponent(token)}`), {
       method: "GET",
       cache: "no-store"
     });
@@ -579,7 +590,7 @@ function sendInput(x, y) {
   if (!token) {
     return;
   }
-  fetch("/api/input", {
+  fetch(apiUrl("/api/input"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token, x, y })
@@ -590,7 +601,7 @@ function sendClick(x, y) {
   if (!token) {
     return;
   }
-  fetch("/api/click", {
+  fetch(apiUrl("/api/click"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token, x, y })
@@ -601,7 +612,7 @@ function sendAction(x, y) {
   if (!token) {
     return;
   }
-  fetch("/api/action", {
+  fetch(apiUrl("/api/action"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token, x, y })
@@ -612,7 +623,7 @@ function sendSelect(number) {
   if (!token) {
     return;
   }
-  fetch("/api/select", {
+  fetch(apiUrl("/api/select"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token, number })
@@ -1070,7 +1081,7 @@ window.addEventListener("beforeunload", () => {
   const blob = new Blob([JSON.stringify({ token })], {
     type: "application/json"
   });
-  navigator.sendBeacon("/api/leave", blob);
+  navigator.sendBeacon(apiUrl("/api/leave"), blob);
 });
 
 playAgainBtn.addEventListener("click", async () => {
