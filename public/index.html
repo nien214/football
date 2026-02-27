@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mouse Soccer</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <div id="menu" class="panel">
+        <h1>Mouse Soccer</h1>
+        <p class="subtitle">Top view 2D soccer game, 3v3 only. Mouse only.</p>
+
+        <label class="field">
+          <span>Name</span>
+          <input id="nameInput" type="text" maxlength="18" value="Player" />
+        </label>
+
+        <label class="field">
+          <span>Country</span>
+          <select id="countrySelect"></select>
+        </label>
+
+        <div class="mode-row">
+          <button id="modeCpuBtn" class="mode-btn active" type="button">
+            Play vs CPU
+          </button>
+          <button id="modeOnlineBtn" class="mode-btn" type="button">
+            Online Multiplayer
+          </button>
+        </div>
+
+        <div id="cpuControls" class="controls">
+          <button id="startCpuBtn" class="primary" type="button">Start Match</button>
+        </div>
+
+        <div id="onlineControls" class="controls hidden">
+          <button id="createBtn" class="primary" type="button">
+            Create Game (4 digits)
+          </button>
+          <div class="join-row">
+            <input
+              id="codeInput"
+              type="text"
+              maxlength="4"
+              inputmode="numeric"
+              placeholder="1234"
+            />
+            <button id="joinBtn" type="button">Join</button>
+          </div>
+          <div id="roomCodeBox" class="room-code hidden"></div>
+        </div>
+
+        <p id="statusText" class="status">Connecting...</p>
+
+        <ul class="tips">
+          <li>Move cursor: selected footballer follows cursor direction.</li>
+          <li>Arrow keys or W,A,S,D: move keyboard cursor and control movement.</li>
+          <li>Spacebar: pass/shoot in mouse or keyboard cursor direction.</li>
+          <li>Click footballer: select footballer.</li>
+          <li>Keys 1,2,3: select player. If your team has the ball, pass to player 1/2/3.</li>
+          <li>After goal: celebration and score board play automatically.</li>
+          <li>Ball owner click teammate: pass.</li>
+          <li>Ball owner click pitch: shoot to that direction.</li>
+        </ul>
+      </div>
+
+      <div class="field-wrap">
+        <div id="hud" class="hud hidden">
+          <div id="hudScore" class="hud-score">0 - 0</div>
+          <div id="hudTime" class="hud-time">00:00</div>
+        </div>
+        <div id="preloadOverlay" class="preload-overlay hidden">
+          <div class="preload-versus">
+            <div id="preloadFlagA" class="preload-flag">🏳️</div>
+            <div class="preload-vs">VS</div>
+            <div id="preloadFlagB" class="preload-flag">🏳️</div>
+          </div>
+          <div id="preloadLoading" class="preload-loading">LOADING</div>
+        </div>
+        <div id="goalGifOverlay" class="goal-gif-overlay hidden">
+          <img id="goalGif" alt="Goal celebration" />
+        </div>
+        <canvas id="pitch" width="1000" height="620"></canvas>
+        <div id="resultOverlay" class="result-overlay hidden">
+          <div class="result-card">
+            <h2 id="resultTitle">FULL TIME</h2>
+            <p id="resultWinner" class="result-winner"></p>
+            <p id="resultScore" class="result-score">0 - 0</p>
+            <button id="playAgainBtn" class="primary" type="button">Play Again</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/client.js" defer></script>
+  </body>
+</html>

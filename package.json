@@ -1,0 +1,10 @@
+{
+  "name": "mouse-soccer",
+  "version": "1.0.0",
+  "description": "Top view 2D soccer game with CPU and online multiplayer.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {}
+}
