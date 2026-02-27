@@ -2,6 +2,7 @@ const FIELD_WIDTH = 1000;
 const FIELD_HEIGHT = 620;
 const GOAL_WIDTH = 220;
 const KEYBOARD_CURSOR_SPEED = 420;
+const STATE_POLL_MS = 55;
 const REAL_MATCH_MS = 2 * 60 * 1000;
 const VIRTUAL_MATCH_SECONDS = 90 * 60;
 const REMOTE_API_BASE = "https://football-2kxo.onrender.com";
@@ -108,11 +109,26 @@ const CPU_COUNTRIES = [
 ];
 
 const CELEBRATION_GIFS = [
-  "assets/celebrate1.gif",
-  "assets/celebrate2.gif",
-  "assets/celebrate3.gif",
-  "assets/celebrate4.gif"
+  "assets/arg_celeb1.gif",
+  "assets/arg_celeb2.gif",
+  "assets/arg_celeb3.gif",
+  "assets/arg_celeb4.gif",
+  "assets/arg_celeb5.gif",
+  "assets/arg_celeb6.gif",
+  "assets/bra_celeb1.gif",
+  "assets/bra_celeb2.gif",
+  "assets/bra_celeb5.gif",
+  "assets/bra_celeb6.gif",
+  "assets/bra_celeb7.gif",
+  "assets/kor_celeb1.gif",
+  "assets/por_celeb1.gif"
 ];
+const BRAZIL_GIFS = CELEBRATION_GIFS.filter((src) =>
+  src.toLowerCase().includes("/bra_")
+);
+const ARGENTINA_GIFS = CELEBRATION_GIFS.filter((src) =>
+  src.toLowerCase().includes("/arg_")
+);
 const REQUIRED_ASSETS = [
   ...CELEBRATION_GIFS,
   "assets/crowd.mp3",
@@ -417,8 +433,21 @@ function playGoalGif() {
   if (!goalGifOverlay || !goalGif) {
     return;
   }
-  const pick = CELEBRATION_GIFS[Math.floor(Math.random() * CELEBRATION_GIFS.length)];
-  goalGif.src = `${pick}?t=${Date.now()}`;
+  const scoringTeam = state?.goalPause?.scoringTeam;
+  const countryText = String(state?.profiles?.[scoringTeam]?.country || "");
+  const countryLower = countryText.toLowerCase();
+
+  let pool = CELEBRATION_GIFS;
+  if (countryText.includes("🇧🇷") || countryLower.includes("brazil")) {
+    pool = BRAZIL_GIFS.length > 0 ? BRAZIL_GIFS : CELEBRATION_GIFS;
+  } else if (countryText.includes("🇦🇷") || countryLower.includes("argentina")) {
+    pool = ARGENTINA_GIFS.length > 0 ? ARGENTINA_GIFS : CELEBRATION_GIFS;
+  }
+
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  // Reset src first so repeated same GIF still replays from frame 1.
+  goalGif.removeAttribute("src");
+  goalGif.src = pick;
   goalGifOverlay.classList.remove("hidden");
 }
 
@@ -488,7 +517,7 @@ function startPolling() {
   }
   pollTimer = setInterval(() => {
     void pollState();
-  }, 90);
+  }, STATE_POLL_MS);
   void pollState();
 }
 
@@ -955,6 +984,10 @@ createBtn.addEventListener("click", async () => {
   const profile = profilePayload();
   try {
     setStatus("Generating 4-digit room code...");
+    await ensureAssetsPreloaded({
+      leftCountry: profile.country,
+      rightCountry: "Unknown"
+    });
     await safeLeaveSession();
     const response = await apiPost("/api/create-online", profile);
     const safeCode = normalizeCode4(response.code);
@@ -988,6 +1021,10 @@ joinBtn.addEventListener("click", async () => {
 
   const profile = profilePayload();
   try {
+    await ensureAssetsPreloaded({
+      leftCountry: profile.country,
+      rightCountry: "Unknown"
+    });
     await safeLeaveSession();
     const response = await apiPost("/api/join-online", {
       ...profile,

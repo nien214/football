@@ -16,6 +16,7 @@ const ROOM_CLEANUP_MS = 15000;
 const POSSESSION_PROTECTION_MS = 1000;
 const GOAL_GIF_MS = 2600;
 const GOAL_SCORE_MS = 1650;
+const KICKOFF_DELAY_MS = 3000;
 
 const FIELD = {
   width: 1000,
@@ -186,6 +187,7 @@ function createRoom(mode, code = null) {
     timeLeftMs: MATCH_TIME_MS,
     started: false,
     ready: [false, false],
+    kickoffUntil: 0,
     ended: false,
     endedAt: 0,
     endReason: null,
@@ -342,6 +344,7 @@ function resetForKickoff(room, kickoffTeam, now) {
   room.ball.vx = 0;
   room.ball.vy = 0;
   room.ball.lockUntil = now + 180;
+  room.kickoffUntil = now + KICKOFF_DELAY_MS;
 }
 
 function scoreGoal(room, scoringTeam, now) {
@@ -728,6 +731,13 @@ function updateRoom(room, dt, now) {
     }
     return;
   }
+
+  if (room.kickoffUntil && now < room.kickoffUntil) {
+    room.inputs[0].clicks = [];
+    room.inputs[1].clicks = [];
+    return;
+  }
+  room.kickoffUntil = 0;
 
   room.timeLeftMs = Math.max(0, room.timeLeftMs - dt * 1000);
 
