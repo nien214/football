@@ -104,6 +104,10 @@ function generateRoomCode() {
   return null;
 }
 
+function isValidRoomCode(code) {
+  return typeof code === "string" && /^\d{4}$/.test(code);
+}
+
 function randomCpuCountry() {
   const index = Math.floor(Math.random() * CPU_COUNTRIES.length);
   return CPU_COUNTRIES[index] || "🇧🇷 Brazil";
@@ -181,6 +185,7 @@ function createRoom(mode, code = null) {
     score: [0, 0],
     timeLeftMs: MATCH_TIME_MS,
     started: false,
+    ready: [false, false],
     ended: false,
     endedAt: 0,
     endReason: null,
@@ -880,7 +885,13 @@ function leaveSession(token) {
   }
 
   if (!room.started) {
-    closeRoom(room.id);
+    if (session.team === 0) {
+      closeRoom(room.id);
+    } else {
+      room.sessionTokens[1] = null;
+      room.profiles[1] = { name: "Waiting...", country: "Unknown" };
+      room.ready = [false, false];
+    }
     return;
   }
 
@@ -937,15 +948,17 @@ function stateResponse(session, room) {
   }
 
   if (room.mode === "online" && !room.started) {
+    const bothConnected = Boolean(room.sessionTokens[0] && room.sessionTokens[1]);
     return {
       statusCode: 200,
       payload: {
         ok: true,
-        status: "waiting",
+        status: bothConnected ? "starting" : "waiting",
         mode: room.mode,
         code: room.code,
         team: session.team,
-        profiles: room.profiles
+        profiles: room.profiles,
+        ready: room.ready
       }
     };
   }
@@ -1029,7 +1042,7 @@ async function handleApi(req, res, pathname, searchParams) {
     leaveSession(body.token);
 
     const code = generateRoomCode();
-    if (!code) {
+    if (!code || !isValidRoomCode(code)) {
       sendJson(res, 503, {
         ok: false,
         message: "Could not generate room code. Try again."
@@ -1041,6 +1054,7 @@ async function handleApi(req, res, pathname, searchParams) {
     room.profiles[0] = normalizeProfile(body);
     room.profiles[1] = { name: "Waiting...", country: "Unknown" };
     room.started = false;
+    room.ready = [false, false];
     room.timeLeftMs = MATCH_TIME_MS;
     room.ended = false;
     room.endReason = null;
@@ -1092,12 +1106,12 @@ async function handleApi(req, res, pathname, searchParams) {
     }
 
     room.profiles[1] = normalizeProfile(body);
-    room.started = true;
+    room.started = false;
+    room.ready = [false, false];
     room.ended = false;
     room.endReason = null;
     room.abandonedTeam = null;
     room.timeLeftMs = MATCH_TIME_MS;
-    resetForKickoff(room, Math.random() < 0.5 ? 0 : 1, Date.now());
 
     const token = createSession(room.id, 1);
     room.sessionTokens[1] = token;
@@ -1108,8 +1122,46 @@ async function handleApi(req, res, pathname, searchParams) {
       mode: "online",
       team: 1,
       code,
-      status: "started"
+      status: "starting"
     });
+    return;
+  }
+
+  if (pathname === "/api/ready" && req.method === "POST") {
+    const body = await parseBody(req);
+    const session = touchSession(String(body.token || ""));
+    if (!session) {
+      sendJson(res, 401, { ok: false, message: "Invalid session token." });
+      return;
+    }
+
+    const room = rooms.get(session.roomId);
+    if (!room || room.mode !== "online" || room.ended) {
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (room.started) {
+      sendJson(res, 200, { ok: true, status: "started" });
+      return;
+    }
+
+    if (!room.sessionTokens[0] || !room.sessionTokens[1]) {
+      sendJson(res, 200, { ok: true, status: "waiting" });
+      return;
+    }
+
+    room.ready[session.team] = true;
+    if (room.ready[0] && room.ready[1]) {
+      room.started = true;
+      room.timeLeftMs = MATCH_TIME_MS;
+      room.goalPause = null;
+      resetForKickoff(room, Math.random() < 0.5 ? 0 : 1, Date.now());
+      sendJson(res, 200, { ok: true, status: "started" });
+      return;
+    }
+
+    sendJson(res, 200, { ok: true, status: "starting" });
     return;
   }
 
@@ -1346,7 +1398,8 @@ setInterval(() => {
   const now = Date.now();
 
   for (const room of rooms.values()) {
-    if (room.mode === "online" && room.started && !room.ended) {
+    if (room.mode === "online" && !room.ended) {
+      let roomWasClosed = false;
       for (let team = 0; team < 2; team += 1) {
         const token = room.sessionTokens[team];
         const session = token ? sessions.get(token) : null;
@@ -1356,12 +1409,25 @@ setInterval(() => {
             sessions.delete(token);
             room.sessionTokens[team] = null;
           }
-          room.ended = true;
-          room.endReason = "opponent_left";
-          room.abandonedTeam = team;
-          room.endedAt = now;
+          if (!room.started) {
+            if (team === 0) {
+              closeRoom(room.id);
+              roomWasClosed = true;
+            } else {
+              room.profiles[1] = { name: "Waiting...", country: "Unknown" };
+              room.ready = [false, false];
+            }
+          } else {
+            room.ended = true;
+            room.endReason = "opponent_left";
+            room.abandonedTeam = team;
+            room.endedAt = now;
+          }
           break;
         }
+      }
+      if (roomWasClosed) {
+        continue;
       }
     }
 
