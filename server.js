@@ -53,6 +53,69 @@ const CPU_COUNTRIES = [
   "🇪🇬 Egypt"
 ];
 
+const CPU_DIFFICULTY_PROFILES = {
+  easy: {
+    outfieldSpeedScale: 0.8,
+    defenderSpeedScale: 0.78,
+    shotDistance: 165,
+    shotSpread: 130,
+    shotSpeedScale: 0.82,
+    shotDecisionCooldownMs: 1250,
+    carrierAdvance: 155,
+    carrierSpeedScale: 0.95,
+    possessionPush: 125,
+    defendRetreat: 70,
+    looseBallSpeedScale: 0.98,
+    pressSpeedScale: 1,
+    pressCount: 1,
+    postStealDecisionDelayMs: 280,
+    tackleReachCpuDelta: -2.2,
+    tackleReachVsCpuDelta: 1.8,
+    requireOpenLane: false,
+    openLaneMinClearance: 0
+  },
+  medium: {
+    outfieldSpeedScale: 0.86,
+    defenderSpeedScale: 0.9,
+    shotDistance: 185,
+    shotSpread: 95,
+    shotSpeedScale: 0.9,
+    shotDecisionCooldownMs: 1020,
+    carrierAdvance: 145,
+    carrierSpeedScale: 0.94,
+    possessionPush: 85,
+    defendRetreat: 120,
+    looseBallSpeedScale: 1.02,
+    pressSpeedScale: 1.04,
+    pressCount: 1,
+    postStealDecisionDelayMs: 240,
+    tackleReachCpuDelta: -0.8,
+    tackleReachVsCpuDelta: 0.6,
+    requireOpenLane: true,
+    openLaneMinClearance: 24
+  },
+  hard: {
+    outfieldSpeedScale: 0.95,
+    defenderSpeedScale: 0.96,
+    shotDistance: 215,
+    shotSpread: 70,
+    shotSpeedScale: 1,
+    shotDecisionCooldownMs: 860,
+    carrierAdvance: 175,
+    carrierSpeedScale: 1.02,
+    possessionPush: 120,
+    defendRetreat: 95,
+    looseBallSpeedScale: 1.08,
+    pressSpeedScale: 1.12,
+    pressCount: 2,
+    postStealDecisionDelayMs: 180,
+    tackleReachCpuDelta: 0.9,
+    tackleReachVsCpuDelta: -0.8,
+    requireOpenLane: true,
+    openLaneMinClearance: 20
+  }
+};
+
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -93,6 +156,16 @@ function normalizeProfile(raw) {
     .trim()
     .slice(0, 40) || "Unknown";
   return { name, country };
+}
+
+function normalizeCpuDifficulty(raw) {
+  const value = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (value === "hard" || value === "medium") {
+    return value;
+  }
+  return "easy";
 }
 
 function generateRoomCode() {
@@ -150,6 +223,7 @@ function createRoom(mode, code = null) {
     id: code || `cpu-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
     code,
     mode,
+    cpuDifficulty: "easy",
     sessionTokens: [null, null],
     profiles: [
       { name: "Player 1", country: "Unknown" },
@@ -208,12 +282,25 @@ function isCpuTeam(room, team) {
   return room.mode === "cpu" && team === 1;
 }
 
+function getCpuDifficultyProfile(room) {
+  const key = normalizeCpuDifficulty(room && room.cpuDifficulty);
+  return CPU_DIFFICULTY_PROFILES[key] || CPU_DIFFICULTY_PROFILES.easy;
+}
+
 function getOutfieldSpeedForTeam(room, team) {
-  return isCpuTeam(room, team) ? OUTFIELD_SPEED * 0.8 : OUTFIELD_SPEED;
+  if (!isCpuTeam(room, team)) {
+    return OUTFIELD_SPEED;
+  }
+  const profile = getCpuDifficultyProfile(room);
+  return OUTFIELD_SPEED * profile.outfieldSpeedScale;
 }
 
 function getDefenderSpeedForTeam(room, team) {
-  return isCpuTeam(room, team) ? DEFENDER_SPEED * 0.78 : DEFENDER_SPEED;
+  if (!isCpuTeam(room, team)) {
+    return DEFENDER_SPEED;
+  }
+  const profile = getCpuDifficultyProfile(room);
+  return DEFENDER_SPEED * profile.defenderSpeedScale;
 }
 
 function getBallOwner(room) {
@@ -385,6 +472,18 @@ function getClosestOutfield(room, team, x, y) {
   return best;
 }
 
+function getClosestOutfields(room, team, x, y, count) {
+  const outfields = room.teams[team]
+    .filter((player) => player.role === "F")
+    .map((player) => ({
+      player,
+      distance: dist2(player.x, player.y, x, y)
+    }))
+    .sort((a, b) => a.distance - b.distance);
+
+  return outfields.slice(0, count).map((entry) => entry.player);
+}
+
 function getNearestOpponentDistance(room, player) {
   let best = Infinity;
   for (const opponent of room.teams[1 - player.team]) {
@@ -418,6 +517,60 @@ function getBestForwardTarget(room, team, from) {
     return best;
   }
   return room.teams[team].find((p) => p.role === "F" && p.id !== from.id) || null;
+}
+
+function distancePointToSegment(px, py, ax, ay, bx, by) {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const len2 = abx * abx + aby * aby;
+  if (len2 <= 1e-6) {
+    return Math.hypot(px - ax, py - ay);
+  }
+  const t = clamp(((px - ax) * abx + (py - ay) * aby) / len2, 0, 1);
+  const cx = ax + abx * t;
+  const cy = ay + aby * t;
+  return Math.hypot(px - cx, py - cy);
+}
+
+function getShotLaneClearance(room, team, fromX, fromY, toX, toY) {
+  let minDistance = Infinity;
+  for (const opponent of room.teams[1 - team]) {
+    const d = distancePointToSegment(opponent.x, opponent.y, fromX, fromY, toX, toY);
+    if (d < minDistance) {
+      minDistance = d;
+    }
+  }
+  return minDistance;
+}
+
+function pickSmartShotY(room, player, attackGoalX, spread) {
+  const centerY = FIELD.height / 2;
+  const topY = FIELD.height / 2 - FIELD.goalWidth / 2 + 16;
+  const bottomY = FIELD.height / 2 + FIELD.goalWidth / 2 - 16;
+  const boundedSpread = clamp(spread, 24, FIELD.goalWidth / 2 - 16);
+  const candidates = [
+    centerY,
+    clamp(centerY - boundedSpread, topY, bottomY),
+    clamp(centerY + boundedSpread, topY, bottomY),
+    clamp(centerY - boundedSpread * 0.55, topY, bottomY),
+    clamp(centerY + boundedSpread * 0.55, topY, bottomY)
+  ];
+
+  let bestY = centerY;
+  let bestClearance = -Infinity;
+
+  for (const y of candidates) {
+    const clearance = getShotLaneClearance(room, player.team, player.x, player.y, attackGoalX, y);
+    if (clearance > bestClearance) {
+      bestClearance = clearance;
+      bestY = y;
+    }
+  }
+
+  return {
+    y: bestY,
+    clearance: bestClearance
+  };
 }
 
 function handleTeamClick(room, team, x, y, now) {
@@ -506,39 +659,86 @@ function passToTeammateNumber(room, team, number, now) {
 function runAiCarrierLogic(room, player, now) {
   const team = player.team;
   const cpuTeam = isCpuTeam(room, team);
+  const cpuProfile = cpuTeam ? getCpuDifficultyProfile(room) : null;
+  const cpuDifficulty = cpuTeam ? normalizeCpuDifficulty(room.cpuDifficulty) : "easy";
   const attackGoalX = team === 0 ? FIELD.width + 30 : -30;
   const attackGoalY = FIELD.height / 2;
   const distanceToGoal = Math.hypot(attackGoalX - player.x, attackGoalY - player.y);
+  const shotDistance = cpuProfile ? cpuProfile.shotDistance : 210;
+  const decisionCooldown = cpuProfile ? cpuProfile.shotDecisionCooldownMs : 920;
 
   if (now >= room.nextAiDecisionAt[team]) {
-    if (distanceToGoal < (cpuTeam ? 165 : 210)) {
-      const spread = (Math.random() - 0.5) * (cpuTeam ? 130 : 80);
+    if (cpuTeam) {
+      if (cpuDifficulty === "easy") {
+        if (distanceToGoal < shotDistance) {
+          const spread = (Math.random() - 0.5) * cpuProfile.shotSpread;
+          const shotY = clamp(
+            attackGoalY + spread,
+            FIELD.height / 2 - FIELD.goalWidth / 2 + 16,
+            FIELD.height / 2 + FIELD.goalWidth / 2 - 16
+          );
+          shootBall(room, player, attackGoalX, shotY, now, SHOT_SPEED * cpuProfile.shotSpeedScale);
+          room.nextAiDecisionAt[team] = now + decisionCooldown;
+          return;
+        }
+      } else {
+        const picked = pickSmartShotY(room, player, attackGoalX, cpuProfile.shotSpread);
+        const canShoot =
+          distanceToGoal < shotDistance &&
+          (!cpuProfile.requireOpenLane || picked.clearance >= cpuProfile.openLaneMinClearance);
+        if (canShoot) {
+          shootBall(room, player, attackGoalX, picked.y, now, SHOT_SPEED * cpuProfile.shotSpeedScale);
+          room.nextAiDecisionAt[team] = now + decisionCooldown;
+          return;
+        }
+
+        // Hard mode can offload quickly when heavily pressured.
+        if (cpuDifficulty === "hard" && getNearestOpponentDistance(room, player) < 52) {
+          const forward = getBestForwardTarget(room, team, player);
+          if (forward) {
+            const direction = team === 0 ? 1 : -1;
+            const progress = (forward.x - player.x) * direction;
+            if (progress > 8 && passBall(room, player, forward, now, PASS_SPEED * 1.05)) {
+              room.nextAiDecisionAt[team] = now + 420;
+              return;
+            }
+          }
+        }
+      }
+    } else if (distanceToGoal < shotDistance) {
+      const spread = (Math.random() - 0.5) * 80;
       const shotY = clamp(
         attackGoalY + spread,
         FIELD.height / 2 - FIELD.goalWidth / 2 + 16,
         FIELD.height / 2 + FIELD.goalWidth / 2 - 16
       );
-      shootBall(room, player, attackGoalX, shotY, now, cpuTeam ? SHOT_SPEED * 0.82 : SHOT_SPEED);
-      room.nextAiDecisionAt[team] = now + (cpuTeam ? 1250 : 920);
+      shootBall(room, player, attackGoalX, shotY, now, SHOT_SPEED);
+      room.nextAiDecisionAt[team] = now + decisionCooldown;
       return;
     }
   }
 
   const direction = team === 0 ? 1 : -1;
   const laneOffset = (player.baseY - attackGoalY) * 0.18;
-  player.targetX = clamp(player.x + direction * (cpuTeam ? 155 : 170), 40, FIELD.width - 40);
+  player.targetX = clamp(
+    player.x + direction * (cpuProfile ? cpuProfile.carrierAdvance : 170),
+    40,
+    FIELD.width - 40
+  );
   player.targetY = clamp(
     attackGoalY + laneOffset + (room.ball.y - attackGoalY) * 0.08,
     40,
     FIELD.height - 40
   );
-  player.moveSpeed = getOutfieldSpeedForTeam(room, team) * (cpuTeam ? 0.95 : 0.92);
+  player.moveSpeed = getOutfieldSpeedForTeam(room, team) * (cpuProfile ? cpuProfile.carrierSpeedScale : 0.92);
 }
 
 function setOutfieldTarget(room, player, context, now) {
   const team = player.team;
   const input = room.inputs[team];
   const human = isHumanTeam(room, team);
+  const cpuTeam = isCpuTeam(room, team);
+  const cpuProfile = cpuTeam ? getCpuDifficultyProfile(room) : null;
   const isSelected = human && input.selectedId === player.id;
   const outfieldSpeed = getOutfieldSpeedForTeam(room, team);
   const defenderSpeed = getDefenderSpeedForTeam(room, team);
@@ -558,28 +758,28 @@ function setOutfieldTarget(room, player, context, now) {
   if (!context.owner && context.closestFree && context.closestFree.id === player.id) {
     player.targetX = room.ball.x;
     player.targetY = room.ball.y;
-    player.moveSpeed = outfieldSpeed * 0.98;
+    player.moveSpeed = outfieldSpeed * (cpuProfile ? cpuProfile.looseBallSpeedScale : 0.98);
     return;
   }
 
   if (
     context.owner &&
     context.owner.team !== team &&
-    context.closestToOwner &&
-    context.closestToOwner.id === player.id
+    context.presserIds &&
+    context.presserIds.has(player.id)
   ) {
     player.targetX = context.owner.x;
     player.targetY = context.owner.y;
-    player.moveSpeed = outfieldSpeed;
+    player.moveSpeed = outfieldSpeed * (cpuProfile ? cpuProfile.pressSpeedScale : 1);
     return;
   }
 
   const direction = team === 0 ? 1 : -1;
   let tx = player.baseX;
   if (context.possessionTeam === team) {
-    tx += direction * 125;
+    tx += direction * (cpuProfile ? cpuProfile.possessionPush : 125);
   } else if (context.possessionTeam === 1 - team) {
-    tx -= direction * 70;
+    tx -= direction * (cpuProfile ? cpuProfile.defendRetreat : 70);
   }
   const ty = player.baseY + (room.ball.y - FIELD.height / 2) * 0.2;
 
@@ -612,6 +812,7 @@ function resolveTackles(room, now) {
   if (!owner || now <= room.ball.lockUntil || now <= room.ball.stealLockUntil) {
     return;
   }
+  const cpuProfile = room.mode === "cpu" ? getCpuDifficultyProfile(room) : null;
 
   let winner = null;
   let bestDistance = Infinity;
@@ -621,11 +822,11 @@ function resolveTackles(room, now) {
       continue;
     }
     let reach = challenger.radius + owner.radius + 2;
-    if (room.mode === "cpu") {
+    if (cpuProfile) {
       if (challenger.team === 1) {
-        reach -= 2.2;
+        reach += cpuProfile.tackleReachCpuDelta;
       } else if (owner.team === 1) {
-        reach += 1.8;
+        reach += cpuProfile.tackleReachVsCpuDelta;
       }
     }
     const d = dist2(challenger.x, challenger.y, owner.x, owner.y);
@@ -637,7 +838,11 @@ function resolveTackles(room, now) {
 
   if (winner && now > owner.kickLockUntil) {
     setBallOwner(room, winner, now);
-    room.nextAiDecisionAt[winner.team] = now + 280;
+    const delay =
+      isCpuTeam(room, winner.team) && cpuProfile
+        ? cpuProfile.postStealDecisionDelayMs
+        : 280;
+    room.nextAiDecisionAt[winner.team] = now + delay;
   }
 }
 
@@ -758,20 +963,28 @@ function updateRoom(room, dt, now) {
 
   const owner = getBallOwner(room);
   const possessionTeam = owner ? owner.team : -1;
+  const team0PressCount = isCpuTeam(room, 0) ? getCpuDifficultyProfile(room).pressCount : 1;
+  const team1PressCount = isCpuTeam(room, 1) ? getCpuDifficultyProfile(room).pressCount : 1;
   const contexts = [
     {
       owner,
       possessionTeam,
       closestFree: owner ? null : getClosestOutfield(room, 0, room.ball.x, room.ball.y),
-      closestToOwner:
-        owner && owner.team !== 0 ? getClosestOutfield(room, 0, owner.x, owner.y) : null
+      presserIds: new Set(
+        owner && owner.team !== 0
+          ? getClosestOutfields(room, 0, owner.x, owner.y, team0PressCount).map((player) => player.id)
+          : []
+      )
     },
     {
       owner,
       possessionTeam,
       closestFree: owner ? null : getClosestOutfield(room, 1, room.ball.x, room.ball.y),
-      closestToOwner:
-        owner && owner.team !== 1 ? getClosestOutfield(room, 1, owner.x, owner.y) : null
+      presserIds: new Set(
+        owner && owner.team !== 1
+          ? getClosestOutfields(room, 1, owner.x, owner.y, team1PressCount).map((player) => player.id)
+          : []
+      )
     }
   ];
 
@@ -1022,12 +1235,14 @@ async function handleApi(req, res, pathname, searchParams) {
     leaveSession(body.token);
 
     const profile = normalizeProfile(body);
+    const cpuDifficulty = normalizeCpuDifficulty(body.cpuDifficulty);
     const cpuCountry = (typeof body.cpuCountry === "string" ? body.cpuCountry : "")
       .trim()
       .slice(0, 40);
     const room = createRoom("cpu");
     room.profiles[0] = profile;
     room.profiles[1] = { name: "CPU", country: cpuCountry || randomCpuCountry() };
+    room.cpuDifficulty = cpuDifficulty;
     room.started = true;
     room.timeLeftMs = MATCH_TIME_MS;
     room.ended = false;

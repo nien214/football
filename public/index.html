@@ -33,6 +33,37 @@
           </div>
 
           <div id="cpuControls" class="controls">
+            <fieldset class="difficulty-group">
+              <legend>CPU Difficulty</legend>
+              <label class="difficulty-option">
+                <input
+                  id="cpuDifficultyEasy"
+                  name="cpuDifficulty"
+                  type="radio"
+                  value="easy"
+                  checked
+                />
+                <span>Easy</span>
+              </label>
+              <label class="difficulty-option">
+                <input
+                  id="cpuDifficultyMedium"
+                  name="cpuDifficulty"
+                  type="radio"
+                  value="medium"
+                />
+                <span>Medium</span>
+              </label>
+              <label class="difficulty-option">
+                <input
+                  id="cpuDifficultyHard"
+                  name="cpuDifficulty"
+                  type="radio"
+                  value="hard"
+                />
+                <span>Hard</span>
+              </label>
+            </fieldset>
             <button id="startCpuBtn" class="primary" type="button">Start Match</button>
           </div>
 
@@ -53,18 +84,29 @@
             <div id="roomCodeBox" class="room-code hidden"></div>
           </div>
 
+          <button id="howToPlayBtn" class="secondary" type="button">How to Play</button>
+
           <p id="statusText" class="status">Connecting...</p>
 
-          <ul class="tips">
-            <li>Move cursor: selected footballer follows cursor direction.</li>
-            <li>Arrow keys or W,A,S,D: move keyboard cursor and control movement.</li>
-            <li>Spacebar: pass/shoot in mouse or keyboard cursor direction.</li>
-            <li>Click footballer: select footballer.</li>
-            <li>Keys 1,2,3: select player. If your team has the ball, pass to player 1/2/3.</li>
-            <li>After goal: celebration and score board play automatically.</li>
-            <li>Ball owner click teammate: pass.</li>
-            <li>Ball owner click pitch: shoot to that direction.</li>
-          </ul>
+          <p class="tips-note">Need controls? Click <strong>How to Play</strong>.</p>
+        </div>
+
+        <div id="howToPlayOverlay" class="guide-overlay hidden">
+          <div class="guide-card">
+            <h2>How to Play</h2>
+            <ul class="guide-list">
+              <li>Click a footballer to select it.</li>
+              <li>Move mouse cursor and the selected footballer follows that direction.</li>
+              <li>You can also move using keyboard cursor keys or W,A,S,D.</li>
+              <li>Press keyboard 1, 2, or 3 to select footballer 1, 2, or 3.</li>
+              <li>Click pitch to shoot/pass in that direction.</li>
+              <li>Press Spacebar to pass/shoot toward the mouse or keyboard cursor.</li>
+              <li>If your footballer has the ball, press 1/2/3 to pass to footballer 1/2/3.</li>
+              <li>Opponent can steal if the ball is near them, except 1 second protection after possession.</li>
+              <li>Win by scoring more goals before full time.</li>
+            </ul>
+            <button id="closeHowToPlayBtn" class="primary" type="button">Close</button>
+          </div>
         </div>
 
         <div id="hud" class="hud hidden">

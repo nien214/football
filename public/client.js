@@ -83,11 +83,17 @@ const createBtn = document.getElementById("createBtn");
 const joinBtn = document.getElementById("joinBtn");
 const codeInput = document.getElementById("codeInput");
 const roomCodeBox = document.getElementById("roomCodeBox");
+const howToPlayBtn = document.getElementById("howToPlayBtn");
+const closeHowToPlayBtn = document.getElementById("closeHowToPlayBtn");
+const howToPlayOverlay = document.getElementById("howToPlayOverlay");
 const goalGifOverlay = document.getElementById("goalGifOverlay");
 const goalGif = document.getElementById("goalGif");
 const preloadOverlay = document.getElementById("preloadOverlay");
 const preloadLoading = document.getElementById("preloadLoading");
 const preloadDots = document.getElementById("preloadDots");
+const cpuDifficultyInputs = Array.from(
+  document.querySelectorAll("input[name='cpuDifficulty']")
+);
 
 const canvas = document.getElementById("pitch");
 const ctx = canvas.getContext("2d");
@@ -260,6 +266,18 @@ function profilePayload() {
     name: (nameInput.value || "").trim().slice(0, 18) || "Player",
     country: countrySelect.value || "Unknown"
   };
+}
+
+function getCpuDifficulty() {
+  const selected = cpuDifficultyInputs.find((input) => input.checked);
+  if (!selected) {
+    return "easy";
+  }
+  const value = String(selected.value || "").toLowerCase();
+  if (value === "hard" || value === "medium") {
+    return value;
+  }
+  return "easy";
 }
 
 function randomCpuCountry() {
@@ -505,6 +523,9 @@ function showMenu() {
   hideResultOverlay();
   hideGoalGif();
   hidePreloadOverlay();
+  if (howToPlayOverlay) {
+    howToPlayOverlay.classList.add("hidden");
+  }
   stopCrowdAudio();
   hasPlayedEndWarningWhistle = false;
   resetOnlineStartFlow();
@@ -1013,6 +1034,7 @@ modeOnlineBtn.addEventListener("click", () => setMode("online"));
 startCpuBtn.addEventListener("click", async () => {
   const profile = profilePayload();
   const cpuCountry = randomCpuCountry();
+  const cpuDifficulty = getCpuDifficulty();
   try {
     await ensureAssetsPreloaded({
       leftCountry: profile.country,
@@ -1020,7 +1042,8 @@ startCpuBtn.addEventListener("click", async () => {
     });
     await startCpuMatch({
       ...profile,
-      cpuCountry
+      cpuCountry,
+      cpuDifficulty
     });
   } catch (err) {
     showMenu();
@@ -1249,6 +1272,32 @@ playAgainBtn.addEventListener("click", async () => {
   showMenu();
   setMode(currentMatchMode === "online" ? "online" : "cpu");
 });
+
+if (howToPlayBtn) {
+  howToPlayBtn.addEventListener("click", () => {
+    if (!howToPlayOverlay) {
+      return;
+    }
+    howToPlayOverlay.classList.remove("hidden");
+  });
+}
+
+if (closeHowToPlayBtn) {
+  closeHowToPlayBtn.addEventListener("click", () => {
+    if (!howToPlayOverlay) {
+      return;
+    }
+    howToPlayOverlay.classList.add("hidden");
+  });
+}
+
+if (howToPlayOverlay) {
+  howToPlayOverlay.addEventListener("click", (event) => {
+    if (event.target === howToPlayOverlay) {
+      howToPlayOverlay.classList.add("hidden");
+    }
+  });
+}
 
 populateCountries();
 setMode("cpu");

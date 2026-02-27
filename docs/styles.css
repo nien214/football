@@ -124,6 +124,35 @@ body {
   gap: 8px;
 }
 
+.difficulty-group {
+  margin: 0;
+  border: 1px solid #8ca486;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.difficulty-group legend {
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a3521;
+}
+
+.difficulty-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  margin: 4px 0;
+  cursor: pointer;
+}
+
+.difficulty-option input[type="radio"] {
+  margin: 0;
+  accent-color: #1f7a45;
+}
+
 .primary {
   border: 0;
   border-radius: 8px;
@@ -135,6 +164,21 @@ body {
 
 .primary:hover {
   background: var(--primary-hover);
+}
+
+.secondary {
+  width: 100%;
+  border: 1px solid #3f5b40;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #edf7e8;
+  color: #17331c;
+  font: inherit;
+  cursor: pointer;
+}
+
+.secondary:hover {
+  background: #dfefd7;
 }
 
 .join-row {
@@ -175,6 +219,12 @@ body {
   padding: 0;
   font-size: 13px;
   line-height: 1.35;
+}
+
+.tips-note {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #334f35;
 }
 
 .hud {
@@ -304,6 +354,40 @@ body {
   margin: 0 0 14px;
   font-size: 62px;
   font-weight: 700;
+}
+
+.guide-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 14, 7, 0.66);
+}
+
+.guide-card {
+  width: min(620px, calc(100% - 26px));
+  max-height: calc(100% - 26px);
+  overflow: auto;
+  background: rgba(244, 236, 216, 0.98);
+  border: 2px solid #29422f;
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.guide-card h2 {
+  margin: 0 0 10px;
+  font-size: 34px;
+  color: #14351d;
+}
+
+.guide-list {
+  margin: 0 0 14px 18px;
+  padding: 0;
+  color: #102616;
+  line-height: 1.4;
+  font-size: 14px;
 }
 
 .hidden {
