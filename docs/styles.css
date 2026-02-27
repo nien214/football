@@ -11,6 +11,15 @@
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
@@ -22,6 +31,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
   padding:
     calc(10px + env(safe-area-inset-top))
     10px
@@ -54,6 +65,7 @@ body {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   background: #2a8f4a;
   cursor: none;
+  touch-action: none;
 }
 
 .panel {
@@ -171,6 +183,12 @@ body {
   border-radius: 8px;
   padding: 8px 10px;
   background: rgba(255, 255, 255, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow-x: auto;
 }
 
 .difficulty-group legend {
@@ -178,6 +196,7 @@ body {
   font-size: 13px;
   font-weight: 700;
   color: #1a3521;
+  margin-right: 2px;
 }
 
 .difficulty-option {
@@ -185,7 +204,7 @@ body {
   align-items: center;
   gap: 7px;
   font-size: 14px;
-  margin: 4px 0;
+  margin: 0;
   cursor: pointer;
 }
 
@@ -473,21 +492,21 @@ body {
 }
 
 .v-main-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  display: flex;
+  justify-content: center;
+  gap: 26px;
   align-items: end;
 }
 
 .v-stick-side {
   display: flex;
-  justify-content: flex-start;
+  justify-content: center;
 }
 
 .vstick-base {
   position: relative;
-  width: 158px;
-  height: 158px;
+  width: 174px;
+  height: 174px;
   border-radius: 50%;
   background: radial-gradient(circle at 32% 30%, #f3f2d6, #d5d3b5 70%);
   border: 2px solid rgba(35, 58, 38, 0.75);
@@ -499,8 +518,8 @@ body {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 72px;
-  height: 72px;
+  width: 84px;
+  height: 84px;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #ffffff, #dadfd9 72%);
   border: 2px solid rgba(22, 39, 26, 0.8);
@@ -512,7 +531,7 @@ body {
 .v-action-side {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   gap: 10px;
 }
 
@@ -522,26 +541,56 @@ body {
 }
 
 .v-number-btn {
-  width: 58px;
-  height: 58px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
-  border: 2px solid #3f5b40;
-  background: #edf7e8;
-  color: #17331c;
-  font: 700 23px/1 "Trebuchet MS", "Segoe UI", sans-serif;
+  border: 2px solid #133c7d;
+  background: radial-gradient(circle at 30% 26%, #6fc5ff 0%, #2b79d7 48%, #185ab3 100%);
+  color: #f8fdff;
+  font: 700 27px/1 "Trebuchet MS", "Segoe UI", sans-serif;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  box-shadow:
+    0 7px 0 #0f468d,
+    0 10px 14px rgba(0, 0, 0, 0.35),
+    inset 0 2px 4px rgba(255, 255, 255, 0.4);
   touch-action: manipulation;
 }
 
 .v-action-btn {
-  width: 184px;
-  height: 86px;
-  border-radius: 999px;
-  border: 0;
-  background: linear-gradient(180deg, #3aa55f, #1f7a45);
+  width: 188px;
+  height: 188px;
+  border-radius: 50%;
+  border: 3px solid #7f1212;
+  background: radial-gradient(circle at 30% 24%, #ff9c93 0%, #e83f33 46%, #b41313 100%);
   color: #fff;
-  font: 700 23px/1 "Trebuchet MS", "Segoe UI", sans-serif;
-  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.28);
+  font: 700 28px/1.15 "Trebuchet MS", "Segoe UI", sans-serif;
+  text-align: center;
+  padding: 14px;
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.42);
+  box-shadow:
+    0 10px 0 #8f1111,
+    0 15px 20px rgba(0, 0, 0, 0.34),
+    inset 0 2px 5px rgba(255, 255, 255, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   touch-action: manipulation;
+}
+
+.v-number-btn:active {
+  transform: translateY(3px);
+  box-shadow:
+    0 4px 0 #0f468d,
+    0 6px 10px rgba(0, 0, 0, 0.3),
+    inset 0 1px 3px rgba(255, 255, 255, 0.3);
+}
+
+.v-action-btn:active {
+  transform: translateY(4px);
+  box-shadow:
+    0 5px 0 #8f1111,
+    0 9px 13px rgba(0, 0, 0, 0.3),
+    inset 0 1px 3px rgba(255, 255, 255, 0.35);
 }
 
 .v-bottom-row {
@@ -550,13 +599,13 @@ body {
 }
 
 .v-pause-btn {
-  min-width: 150px;
-  height: 56px;
+  min-width: 176px;
+  height: 60px;
   border-radius: 999px;
   border: 1px solid #3f5b40;
   background: #edf7e8;
   color: #17331c;
-  font: 700 21px/1 "Trebuchet MS", "Segoe UI", sans-serif;
+  font: 700 23px/1 "Trebuchet MS", "Segoe UI", sans-serif;
   touch-action: manipulation;
 }
 
@@ -628,48 +677,50 @@ body {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: calc(8px + env(safe-area-inset-bottom));
+    top: 62svh;
+    bottom: auto;
+    transform: translateY(-50%);
     width: 100%;
     max-width: none;
-    padding: 0 14px calc(6px + env(safe-area-inset-bottom));
+    padding: 0 10px;
     z-index: 11;
   }
 
   .app.vstick-active .v-main-row,
   .app.vstick-active .v-bottom-row {
-    width: min(1000px, calc(100vw - 28px));
+    width: min(1000px, calc(100vw - 20px));
     margin: 0 auto;
   }
 
   .app.vstick-active .v-main-row {
-    gap: 16px;
+    gap: clamp(12px, 4vw, 24px);
   }
 
   .app.vstick-active .vstick-base {
-    width: 176px;
-    height: 176px;
+    width: clamp(156px, 42vw, 208px);
+    height: clamp(156px, 42vw, 208px);
   }
 
   .app.vstick-active .vstick-knob {
-    width: 82px;
-    height: 82px;
+    width: clamp(74px, 19vw, 98px);
+    height: clamp(74px, 19vw, 98px);
   }
 
   .app.vstick-active .v-number-btn {
-    width: 62px;
-    height: 62px;
-    font-size: 24px;
+    width: clamp(64px, 16vw, 86px);
+    height: clamp(64px, 16vw, 86px);
+    font-size: clamp(24px, 6vw, 34px);
   }
 
   .app.vstick-active .v-action-btn {
-    width: 196px;
-    height: 90px;
-    font-size: 24px;
+    width: clamp(190px, 48vw, 252px);
+    height: clamp(190px, 48vw, 252px);
+    font-size: clamp(26px, 6.2vw, 34px);
   }
 
   .app.vstick-active .v-pause-btn {
-    min-width: 168px;
-    height: 58px;
-    font-size: 22px;
+    min-width: clamp(176px, 44vw, 244px);
+    height: clamp(60px, 14vw, 84px);
+    font-size: clamp(22px, 5vw, 28px);
   }
 }
