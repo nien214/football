@@ -286,9 +286,9 @@ function updateFieldLayout() {
   const viewportH = Math.max(320, window.innerHeight || document.documentElement.clientHeight || 0);
   const portrait = viewportH >= viewportW;
   const controlsVisible = shouldShowVirtualControls();
-  let reservedHeight = portrait ? 120 : 76;
+  let reservedHeight = portrait ? 148 : 86;
   if (controlsVisible) {
-    reservedHeight += 195;
+    reservedHeight += portrait ? 330 : 220;
   }
   const maxByHeight = ((viewportH - reservedHeight) * FIELD_WIDTH) / FIELD_HEIGHT;
   const maxByWidth = viewportW - (portrait ? 16 : 20);

@@ -22,7 +22,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px;
+  padding:
+    calc(10px + env(safe-area-inset-top))
+    10px
+    calc(10px + env(safe-area-inset-bottom));
 }
 
 .app {
@@ -270,7 +273,7 @@ body {
   position: absolute;
   left: 14px;
   right: 14px;
-  top: -44px;
+  top: -60px;
   z-index: 4;
   pointer-events: none;
   color: #f4ffe8;
@@ -483,8 +486,8 @@ body {
 
 .vstick-base {
   position: relative;
-  width: 132px;
-  height: 132px;
+  width: 158px;
+  height: 158px;
   border-radius: 50%;
   background: radial-gradient(circle at 32% 30%, #f3f2d6, #d5d3b5 70%);
   border: 2px solid rgba(35, 58, 38, 0.75);
@@ -496,8 +499,8 @@ body {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 56px;
-  height: 56px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #ffffff, #dadfd9 72%);
   border: 2px solid rgba(22, 39, 26, 0.8);
@@ -519,24 +522,24 @@ body {
 }
 
 .v-number-btn {
-  width: 44px;
-  height: 44px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
   border: 2px solid #3f5b40;
   background: #edf7e8;
   color: #17331c;
-  font: 700 18px/1 "Trebuchet MS", "Segoe UI", sans-serif;
+  font: 700 23px/1 "Trebuchet MS", "Segoe UI", sans-serif;
   touch-action: manipulation;
 }
 
 .v-action-btn {
-  width: 136px;
-  height: 64px;
+  width: 184px;
+  height: 86px;
   border-radius: 999px;
   border: 0;
   background: linear-gradient(180deg, #3aa55f, #1f7a45);
   color: #fff;
-  font: 700 17px/1 "Trebuchet MS", "Segoe UI", sans-serif;
+  font: 700 23px/1 "Trebuchet MS", "Segoe UI", sans-serif;
   box-shadow: 0 5px 12px rgba(0, 0, 0, 0.28);
   touch-action: manipulation;
 }
@@ -547,13 +550,13 @@ body {
 }
 
 .v-pause-btn {
-  min-width: 96px;
-  height: 42px;
+  min-width: 150px;
+  height: 56px;
   border-radius: 999px;
   border: 1px solid #3f5b40;
   background: #edf7e8;
   color: #17331c;
-  font: 700 15px/1 "Trebuchet MS", "Segoe UI", sans-serif;
+  font: 700 21px/1 "Trebuchet MS", "Segoe UI", sans-serif;
   touch-action: manipulation;
 }
 
@@ -569,7 +572,7 @@ body {
   .hud {
     left: 10px;
     right: 10px;
-    top: -32px;
+    top: -54px;
   }
 
   .hud-score,
@@ -592,7 +595,10 @@ body {
   body {
     align-items: flex-start;
     justify-content: flex-start;
-    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+    padding:
+      calc(10px + env(safe-area-inset-top))
+      8px
+      calc(8px + env(safe-area-inset-bottom));
   }
 
   .app {
@@ -604,35 +610,66 @@ body {
 
   .field-wrap {
     margin: 0 auto;
+    margin-top: 44px;
   }
 
   .hud {
-    top: -30px;
+    top: -48px;
+    left: 10px;
+    right: 10px;
   }
 
-  .v-main-row {
-    gap: 12px;
+  .hud-score,
+  .hud-time {
+    font-size: 30px;
   }
 
-  .vstick-base {
-    width: 118px;
-    height: 118px;
+  .app.vstick-active .virtual-controls {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    width: 100%;
+    max-width: none;
+    padding: 0 14px calc(6px + env(safe-area-inset-bottom));
+    z-index: 11;
   }
 
-  .vstick-knob {
-    width: 52px;
-    height: 52px;
+  .app.vstick-active .v-main-row,
+  .app.vstick-active .v-bottom-row {
+    width: min(1000px, calc(100vw - 28px));
+    margin: 0 auto;
   }
 
-  .v-action-btn {
-    width: 124px;
+  .app.vstick-active .v-main-row {
+    gap: 16px;
+  }
+
+  .app.vstick-active .vstick-base {
+    width: 176px;
+    height: 176px;
+  }
+
+  .app.vstick-active .vstick-knob {
+    width: 82px;
+    height: 82px;
+  }
+
+  .app.vstick-active .v-number-btn {
+    width: 62px;
+    height: 62px;
+    font-size: 24px;
+  }
+
+  .app.vstick-active .v-action-btn {
+    width: 196px;
+    height: 90px;
+    font-size: 24px;
+  }
+
+  .app.vstick-active .v-pause-btn {
+    min-width: 168px;
     height: 58px;
-    font-size: 15px;
-  }
-
-  .v-number-btn {
-    width: 40px;
-    height: 40px;
-    font-size: 16px;
+    font-size: 22px;
   }
 }
