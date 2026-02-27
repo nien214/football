@@ -149,6 +149,9 @@ let assetsPreloadPromise = null;
 let preloadDotsTimer = null;
 let preloadDotCount = 0;
 let hasPlayedEndWarningWhistle = false;
+let onlineStartFlowInFlight = false;
+let onlineStartReadySent = false;
+let onlineStartRoomCode = "";
 const activeSfx = new Set();
 const goalOverlayState = {
   stage: null
@@ -184,6 +187,16 @@ function setStatus(text, isError = false) {
 
 function apiUrl(path) {
   return `${API_BASE}${path}`;
+}
+
+function normalizeCode4(raw) {
+  return String(raw || "").replace(/\D/g, "").slice(0, 4);
+}
+
+function resetOnlineStartFlow() {
+  onlineStartFlowInFlight = false;
+  onlineStartReadySent = false;
+  onlineStartRoomCode = "";
 }
 
 function setMode(nextMode) {
@@ -417,6 +430,7 @@ function showMenu() {
   hidePreloadOverlay();
   stopCrowdAudio();
   hasPlayedEndWarningWhistle = false;
+  resetOnlineStartFlow();
 }
 
 function showGame() {
@@ -465,6 +479,7 @@ async function safeLeaveSession() {
   }
   token = null;
   gameActive = false;
+  resetOnlineStartFlow();
 }
 
 function startPolling() {
@@ -475,6 +490,40 @@ function startPolling() {
     void pollState();
   }, 90);
   void pollState();
+}
+
+async function beginOnlineStartFlow(payload) {
+  const safeCode = normalizeCode4(payload.code);
+  if (!safeCode || !token) {
+    return;
+  }
+
+  if (onlineStartRoomCode !== safeCode) {
+    onlineStartRoomCode = safeCode;
+    onlineStartReadySent = false;
+    onlineStartFlowInFlight = false;
+  }
+
+  if (onlineStartReadySent || onlineStartFlowInFlight) {
+    return;
+  }
+
+  onlineStartFlowInFlight = true;
+  try {
+    const leftCountry = payload.profiles?.[0]?.country || "Unknown";
+    const rightCountry = payload.profiles?.[1]?.country || "Unknown";
+    await ensureAssetsPreloaded({
+      leftCountry,
+      rightCountry
+    });
+    await apiPost("/api/ready", { token });
+    onlineStartReadySent = true;
+    setStatus("Loaded. Waiting for opponent...");
+  } catch (err) {
+    setStatus(err.message || "Failed to load match assets.", true);
+  } finally {
+    onlineStartFlowInFlight = false;
+  }
 }
 
 async function pollState() {
@@ -512,13 +561,33 @@ function handleServerState(payload) {
     hideResultOverlay();
     goalOverlayState.stage = null;
     hideGoalGif();
-    roomCodeBox.textContent = `Room code: ${payload.code}`;
+    const safeCode = normalizeCode4(payload.code);
+    roomCodeBox.textContent = safeCode ? `Room code: ${safeCode}` : "Room code: ----";
     roomCodeBox.classList.remove("hidden");
-    setStatus(`Room ${payload.code} created. Waiting for another player...`);
+    if (safeCode) {
+      codeInput.value = safeCode;
+      setStatus(`Room ${safeCode} created. Waiting for another player...`);
+    } else {
+      setStatus("Room created. Waiting for another player...", false);
+    }
+    return;
+  }
+
+  if (payload.status === "starting") {
+    currentMatchMode = payload.mode;
+    myTeam = payload.team;
+    gameActive = false;
+    state = null;
+    roomCodeBox.classList.add("hidden");
+    hideResultOverlay();
+    showGame();
+    setStatus("Opponent joined. Loading match...");
+    void beginOnlineStartFlow(payload);
     return;
   }
 
   if (payload.status === "started") {
+    resetOnlineStartFlow();
     const wasActive = gameActive;
     const previousTimeLeftMs = state && Number.isFinite(state.timeLeftMs) ? state.timeLeftMs : null;
     currentMatchMode = payload.mode;
@@ -559,6 +628,7 @@ function handleServerState(payload) {
   }
 
   if (payload.status === "ended") {
+    resetOnlineStartFlow();
     myTeam = payload.team;
     state = payload.state;
     gameActive = false;
@@ -573,6 +643,7 @@ function handleServerState(payload) {
   }
 
   if (payload.status === "opponent_left") {
+    resetOnlineStartFlow();
     myTeam = payload.team;
     state = payload.state || state;
     gameActive = false;
@@ -883,22 +954,24 @@ startCpuBtn.addEventListener("click", async () => {
 createBtn.addEventListener("click", async () => {
   const profile = profilePayload();
   try {
-    await ensureAssetsPreloaded({
-      leftCountry: profile.country,
-      rightCountry: "Unknown"
-    });
+    setStatus("Generating 4-digit room code...");
     await safeLeaveSession();
     const response = await apiPost("/api/create-online", profile);
+    const safeCode = normalizeCode4(response.code);
+    if (!/^\d{4}$/.test(safeCode)) {
+      throw new Error("Failed to generate a valid 4-digit room code.");
+    }
     token = response.token;
     myTeam = response.team;
     state = null;
     gameActive = false;
     currentMatchMode = "online";
-    roomCodeBox.textContent = `Room code: ${response.code}`;
+    roomCodeBox.textContent = `Room code: ${safeCode}`;
     roomCodeBox.classList.remove("hidden");
+    codeInput.value = safeCode;
     hideResultOverlay();
     showMenu();
-    setStatus(`Room ${response.code} created. Waiting for another player...`);
+    setStatus(`Room ${safeCode} created. Waiting for another player...`);
     startPolling();
   } catch (err) {
     showMenu();
@@ -915,10 +988,6 @@ joinBtn.addEventListener("click", async () => {
 
   const profile = profilePayload();
   try {
-    await ensureAssetsPreloaded({
-      leftCountry: profile.country,
-      rightCountry: "Unknown"
-    });
     await safeLeaveSession();
     const response = await apiPost("/api/join-online", {
       ...profile,
@@ -931,7 +1000,7 @@ joinBtn.addEventListener("click", async () => {
     currentMatchMode = "online";
     roomCodeBox.classList.add("hidden");
     hideResultOverlay();
-    setStatus(`Joined room ${code}. Starting match...`);
+    setStatus(`Joined room ${code}. Loading match...`);
     startPolling();
   } catch (err) {
     showMenu();
