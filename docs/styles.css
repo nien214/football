@@ -740,7 +740,7 @@ body {
   }
 }
 
-@media (max-width: 900px) and (orientation: landscape) {
+@media (orientation: landscape) and (pointer: coarse) {
   .app.vstick-active {
     width: min(
       calc(var(--field-max-width) + (var(--landscape-side-space) * 2)),
