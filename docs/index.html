@@ -11,7 +11,7 @@
       <div class="field-wrap">
         <div id="menu" class="panel">
           <h1>Mouse Soccer</h1>
-          <p class="subtitle">Top view 2D soccer game, 3v3 only. Mouse only.</p>
+          <p class="subtitle">Top view 2D soccer game, 3v3 only.</p>
 
           <label class="field">
             <span>Name</span>
@@ -31,6 +31,38 @@
               Online Multiplayer
             </button>
           </div>
+
+          <fieldset class="input-mode-group">
+            <legend>Input</legend>
+            <label class="input-mode-option">
+              <input
+                id="inputModeMouse"
+                name="inputMode"
+                type="radio"
+                value="mouse"
+                checked
+              />
+              <span>Mouse</span>
+            </label>
+            <label class="input-mode-option">
+              <input
+                id="inputModeKeyboard"
+                name="inputMode"
+                type="radio"
+                value="keyboard"
+              />
+              <span>Keyboard</span>
+            </label>
+            <label class="input-mode-option">
+              <input
+                id="inputModeVStick"
+                name="inputMode"
+                type="radio"
+                value="vstick"
+              />
+              <span>V.Stick</span>
+            </label>
+          </fieldset>
 
           <div id="cpuControls" class="controls">
             <fieldset class="difficulty-group">
@@ -96,11 +128,12 @@
             <h2>How to Play</h2>
             <ul class="guide-list">
               <li>Click a footballer to select it.</li>
-              <li>Move mouse cursor and the selected footballer follows that direction.</li>
-              <li>You can also move using keyboard cursor keys or W,A,S,D.</li>
+              <li>Mouse input: move mouse for direction, click to select/pass/shoot.</li>
+              <li>Keyboard input: move using keyboard cursor keys or W,A,S,D.</li>
+              <li>V.Stick input (mobile portrait): use stick to move, shoot button to pass/shoot.</li>
               <li>Press keyboard 1, 2, or 3 to select footballer 1, 2, or 3.</li>
-              <li>Click pitch to shoot/pass in that direction.</li>
               <li>Press Spacebar to pass/shoot toward the mouse or keyboard cursor.</li>
+              <li>Press C to mute/unmute crowd sound.</li>
               <li>If your footballer has the ball, press 1/2/3 to pass to footballer 1/2/3.</li>
               <li>Opponent can steal if the ball is near them, except 1 second protection after possession.</li>
               <li>Win by scoring more goals before full time.</li>
@@ -123,6 +156,15 @@
         <div id="goalGifOverlay" class="goal-gif-overlay hidden">
           <img id="goalGif" alt="Goal celebration" />
         </div>
+        <div id="pauseOverlay" class="pause-overlay hidden">
+          <div class="pause-card">
+            <h2>Paused</h2>
+            <div class="pause-actions">
+              <button id="pauseContinueBtn" class="primary" type="button">Continue</button>
+              <button id="pauseEndBtn" class="secondary" type="button">End Match</button>
+            </div>
+          </div>
+        </div>
         <canvas id="pitch" width="1000" height="620"></canvas>
         <div id="resultOverlay" class="result-overlay hidden">
           <div class="result-card">
@@ -131,6 +173,26 @@
             <p id="resultScore" class="result-score">0 - 0</p>
             <button id="playAgainBtn" class="primary" type="button">Play Again</button>
           </div>
+        </div>
+      </div>
+      <div id="virtualControls" class="virtual-controls hidden">
+        <div class="v-main-row">
+          <div class="v-stick-side">
+            <div id="vstickBase" class="vstick-base">
+              <div id="vstickKnob" class="vstick-knob"></div>
+            </div>
+          </div>
+          <div class="v-action-side">
+            <div class="v-number-row">
+              <button id="vBtn1" class="v-number-btn" type="button">1</button>
+              <button id="vBtn2" class="v-number-btn" type="button">2</button>
+              <button id="vBtn3" class="v-number-btn" type="button">3</button>
+            </div>
+            <button id="vActionBtn" class="v-action-btn" type="button">Shoot / Pass</button>
+          </div>
+        </div>
+        <div class="v-bottom-row">
+          <button id="vPauseBtn" class="v-pause-btn" type="button">Pause</button>
         </div>
       </div>
     </div>

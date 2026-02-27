@@ -21,8 +21,11 @@ const KICKOFF_DELAY_MS = 3000;
 const FIELD = {
   width: 1000,
   height: 620,
-  goalWidth: 220
+  goalWidth: 190
 };
+
+const GOAL_LINE_INSET = 80;
+const GOAL_NET_DEPTH = 170;
 
 const BALL_RADIUS = 7;
 const PLAYER_RADIUS = 19;
@@ -31,6 +34,18 @@ const OUTFIELD_SPEED = 120;
 const DEFENDER_SPEED = 110;
 const PASS_SPEED = 280;
 const SHOT_SPEED = 360;
+const BALL_CARRIER_SPEED_MULTIPLIER = 0.99;
+const BALL_CARRY_PULSE_AMPLITUDE = 2.7;
+const BALL_CARRY_PULSE_FREQ = 0.022;
+const BALL_CARRY_LATERAL_AMPLITUDE = 1.35;
+const BALL_CARRY_LATERAL_FREQ = 0.017;
+const LONG_TRAVEL_CURVE_START = FIELD.width * 0.25;
+const LONG_TRAVEL_CURVE_RANGE = FIELD.width * 0.75;
+const CURVE_TURN_RATE_MIN = 0.14;
+const CURVE_TURN_RATE_MAX = 0.34;
+const CURVE_MIN_FLIGHT_MS = 380;
+const CURVE_MAX_FLIGHT_MS = 1250;
+const FAR_SHOT_MAX_ANGLE_DEG = 10;
 
 const LEFT_FORMATION = [
   { x: 180, y: FIELD.height / 2, role: "F" },
@@ -95,24 +110,27 @@ const CPU_DIFFICULTY_PROFILES = {
     openLaneMinClearance: 24
   },
   hard: {
-    outfieldSpeedScale: 0.95,
-    defenderSpeedScale: 0.96,
-    shotDistance: 215,
-    shotSpread: 70,
-    shotSpeedScale: 1,
-    shotDecisionCooldownMs: 860,
-    carrierAdvance: 175,
-    carrierSpeedScale: 1.02,
-    possessionPush: 120,
-    defendRetreat: 95,
-    looseBallSpeedScale: 1.08,
-    pressSpeedScale: 1.12,
+    outfieldSpeedScale: 1.12,
+    defenderSpeedScale: 1.14,
+    shotDistance: 250,
+    shotSpread: 45,
+    shotSpeedScale: 1.16,
+    shotDecisionCooldownMs: 620,
+    carrierAdvance: 195,
+    carrierSpeedScale: 1.16,
+    possessionPush: 150,
+    defendRetreat: 88,
+    looseBallSpeedScale: 1.2,
+    pressSpeedScale: 1.3,
     pressCount: 2,
-    postStealDecisionDelayMs: 180,
-    tackleReachCpuDelta: 0.9,
-    tackleReachVsCpuDelta: -0.8,
+    postStealDecisionDelayMs: 90,
+    tackleReachCpuDelta: 2.8,
+    tackleReachVsCpuDelta: -1.6,
     requireOpenLane: true,
-    openLaneMinClearance: 20
+    openLaneMinClearance: 14,
+    longShotDistance: 390,
+    longShotMinClearance: 16,
+    passMinLaneClearance: 11
   }
 };
 
@@ -121,6 +139,8 @@ const MIME = {
   ".css": "text/css; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
   ".gif": "image/gif",
   ".mp3": "audio/mpeg"
 };
@@ -140,6 +160,51 @@ function dist2(ax, ay, bx, by) {
 
 function round1(value) {
   return Math.round(value * 10) / 10;
+}
+
+function rotateVector(x, y, angle) {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return {
+    x: x * c - y * s,
+    y: x * s + y * c
+  };
+}
+
+function getLongTravelRatio(distance) {
+  if (distance <= LONG_TRAVEL_CURVE_START) {
+    return 0;
+  }
+  return clamp((distance - LONG_TRAVEL_CURVE_START) / LONG_TRAVEL_CURVE_RANGE, 0, 1);
+}
+
+function createCurveProfile(distance, speed, now) {
+  const ratio = getLongTravelRatio(distance);
+  if (ratio <= 0) {
+    return { turnRate: 0, until: 0 };
+  }
+  // Curve direction is random on every long kick.
+  const randomDirection = Math.random() < 0.5 ? -1 : 1;
+  const turnRate =
+    randomDirection *
+    (CURVE_TURN_RATE_MIN + (CURVE_TURN_RATE_MAX - CURVE_TURN_RATE_MIN) * ratio);
+  const curveFlightMs = clamp(
+    (distance / Math.max(speed, 1)) * 1000 * 0.72,
+    CURVE_MIN_FLIGHT_MS,
+    CURVE_MAX_FLIGHT_MS
+  );
+  return { turnRate, until: now + curveFlightMs };
+}
+
+function applyFarShotInaccuracy(dx, dy, distance) {
+  const ratio = getLongTravelRatio(distance);
+  if (ratio <= 0) {
+    return { dx, dy };
+  }
+  const maxAngle = ((2 + FAR_SHOT_MAX_ANGLE_DEG * ratio) * Math.PI) / 180;
+  const angleOffset = (Math.random() * 2 - 1) * maxAngle;
+  const rotated = rotateVector(dx, dy, angleOffset);
+  return { dx: rotated.x, dy: rotated.y };
 }
 
 function toNumber(value, fallback) {
@@ -251,6 +316,8 @@ function createRoom(mode, code = null) {
       y: FIELD.height / 2,
       vx: 0,
       vy: 0,
+      curveTurnRate: 0,
+      curveUntil: 0,
       radius: BALL_RADIUS,
       ownerId: null,
       lastTouchTeam: 0,
@@ -262,6 +329,7 @@ function createRoom(mode, code = null) {
     started: false,
     ready: [false, false],
     kickoffUntil: 0,
+    paused: false,
     ended: false,
     endedAt: 0,
     endReason: null,
@@ -303,6 +371,13 @@ function getDefenderSpeedForTeam(room, team) {
   return DEFENDER_SPEED * profile.defenderSpeedScale;
 }
 
+function applyCarrySpeedRule(room, player, baseSpeed) {
+  if (!player || !player.hasBall) {
+    return baseSpeed;
+  }
+  return baseSpeed * BALL_CARRIER_SPEED_MULTIPLIER;
+}
+
 function getBallOwner(room) {
   if (!room.ball.ownerId) {
     return null;
@@ -325,6 +400,8 @@ function setBallOwner(room, player, now) {
   room.ball.lastTouchTeam = player.team;
   room.ball.vx = 0;
   room.ball.vy = 0;
+  room.ball.curveTurnRate = 0;
+  room.ball.curveUntil = 0;
   room.ball.x = player.x + player.dirX * (player.radius + room.ball.radius + 1);
   room.ball.y = player.y + player.dirY * (player.radius + room.ball.radius + 1);
   room.ball.lockUntil = now + 120;
@@ -335,7 +412,7 @@ function setBallOwner(room, player, now) {
   }
 }
 
-function releaseBall(room, vx, vy, now) {
+function releaseBall(room, vx, vy, now, curveProfile = null) {
   const owner = getBallOwner(room);
   if (owner) {
     owner.hasBall = false;
@@ -347,6 +424,8 @@ function releaseBall(room, vx, vy, now) {
   room.ball.ownerId = null;
   room.ball.vx = vx;
   room.ball.vy = vy;
+  room.ball.curveTurnRate = curveProfile ? curveProfile.turnRate : 0;
+  room.ball.curveUntil = curveProfile ? curveProfile.until : 0;
   room.ball.lockUntil = now + 120;
   room.ball.stealLockUntil = 0;
 }
@@ -358,7 +437,14 @@ function passBall(room, from, to, now, speed = PASS_SPEED) {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const distance = Math.hypot(dx, dy) || 1;
-  releaseBall(room, (dx / distance) * speed, (dy / distance) * speed, now);
+  const curveProfile = createCurveProfile(distance, speed, now);
+  releaseBall(
+    room,
+    (dx / distance) * speed,
+    (dy / distance) * speed,
+    now,
+    curveProfile
+  );
   room.ball.lastTouchTeam = from.team;
   room.nextAiDecisionAt[from.team] = now + 280;
   return true;
@@ -371,7 +457,16 @@ function shootBall(room, from, targetX, targetY, now, speed = SHOT_SPEED) {
   const dx = targetX - from.x;
   const dy = targetY - from.y;
   const distance = Math.hypot(dx, dy) || 1;
-  releaseBall(room, (dx / distance) * speed, (dy / distance) * speed, now);
+  const inaccurate = applyFarShotInaccuracy(dx, dy, distance);
+  const aimedDistance = Math.hypot(inaccurate.dx, inaccurate.dy) || 1;
+  const curveProfile = createCurveProfile(distance, speed, now);
+  releaseBall(
+    room,
+    (inaccurate.dx / aimedDistance) * speed,
+    (inaccurate.dy / aimedDistance) * speed,
+    now,
+    curveProfile
+  );
   room.ball.lastTouchTeam = from.team;
   room.nextAiDecisionAt[from.team] = now + 480;
   return true;
@@ -430,11 +525,23 @@ function resetForKickoff(room, kickoffTeam, now) {
   room.ball.y = kickoffPlayer.y;
   room.ball.vx = 0;
   room.ball.vy = 0;
+  room.ball.curveTurnRate = 0;
+  room.ball.curveUntil = 0;
   room.ball.lockUntil = now + 180;
   room.kickoffUntil = now + KICKOFF_DELAY_MS;
 }
 
 function scoreGoal(room, scoringTeam, now) {
+  const playableLeft = GOAL_LINE_INSET;
+  const playableRight = FIELD.width - GOAL_LINE_INSET;
+  const celebrateTop = Math.random() < 0.5;
+  const anchorX = scoringTeam === 0 ? playableRight - 30 : playableLeft + 30;
+  const anchorY = celebrateTop ? 34 : FIELD.height - 34;
+  const scorers = room.teams[scoringTeam];
+  const phaseOffsets = scorers.map((_, index) =>
+    (index / Math.max(1, scorers.length)) * Math.PI * 2
+  );
+
   room.score[scoringTeam] += 1;
   room.goalPause = {
     stage: "goal",
@@ -442,12 +549,26 @@ function scoreGoal(room, scoringTeam, now) {
     kickoffTeam: 1 - scoringTeam,
     startedAt: now,
     goalUntil: now + GOAL_GIF_MS,
-    scoreUntil: now + GOAL_GIF_MS + GOAL_SCORE_MS
+    scoreUntil: now + GOAL_GIF_MS + GOAL_SCORE_MS,
+    celebration: {
+      anchorX,
+      anchorY,
+      gatherUntil: now + 700,
+      orbitRadiusX: 34,
+      orbitRadiusY: 24,
+      spinRate: 0.0068,
+      phaseOffsets
+    }
   };
 
+  for (const player of room.allPlayers) {
+    player.hasBall = false;
+  }
   room.ball.ownerId = null;
   room.ball.vx = 0;
   room.ball.vy = 0;
+  room.ball.curveTurnRate = 0;
+  room.ball.curveUntil = 0;
   room.ball.lockUntil = now + 120;
   room.ball.stealLockUntil = 0;
   room.inputs[0].clicks = [];
@@ -519,6 +640,42 @@ function getBestForwardTarget(room, team, from) {
   return room.teams[team].find((p) => p.role === "F" && p.id !== from.id) || null;
 }
 
+function getBestHardPassOption(room, from) {
+  const team = from.team;
+  const direction = team === 0 ? 1 : -1;
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (const mate of room.teams[team]) {
+    if (mate.id === from.id || mate.role !== "F") {
+      continue;
+    }
+
+    const progress = (mate.x - from.x) * direction;
+    const laneClearance = getShotLaneClearance(room, team, from.x, from.y, mate.x, mate.y);
+    const receiverSpace = getNearestOpponentDistance(room, mate);
+    const diagonalOffset = Math.abs(mate.y - from.y);
+    const score =
+      (progress >= 0 ? progress * 1.3 : progress * 0.3) +
+      laneClearance * 2.2 +
+      receiverSpace * 0.75 +
+      diagonalOffset * 0.18;
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = {
+        target: mate,
+        score,
+        progress,
+        laneClearance,
+        receiverSpace
+      };
+    }
+  }
+
+  return best;
+}
+
 function distancePointToSegment(px, py, ax, ay, bx, by) {
   const abx = bx - ax;
   const aby = by - ay;
@@ -562,6 +719,41 @@ function pickSmartShotY(room, player, attackGoalX, spread) {
   for (const y of candidates) {
     const clearance = getShotLaneClearance(room, player.team, player.x, player.y, attackGoalX, y);
     if (clearance > bestClearance) {
+      bestClearance = clearance;
+      bestY = y;
+    }
+  }
+
+  return {
+    y: bestY,
+    clearance: bestClearance
+  };
+}
+
+function pickHardShotY(room, player, attackGoalX, spread) {
+  const centerY = FIELD.height / 2;
+  const topY = FIELD.height / 2 - FIELD.goalWidth / 2 + 16;
+  const bottomY = FIELD.height / 2 + FIELD.goalWidth / 2 - 16;
+  const boundedSpread = clamp(spread, 24, FIELD.goalWidth / 2 - 16);
+  const preferredDiagonal = player.y <= centerY ? bottomY : topY;
+  const candidates = [
+    preferredDiagonal,
+    topY,
+    bottomY,
+    clamp(preferredDiagonal + (preferredDiagonal === bottomY ? -1 : 1) * boundedSpread * 0.45, topY, bottomY),
+    centerY
+  ];
+
+  let bestY = preferredDiagonal;
+  let bestClearance = -Infinity;
+  let bestScore = -Infinity;
+
+  for (const y of candidates) {
+    const clearance = getShotLaneClearance(room, player.team, player.x, player.y, attackGoalX, y);
+    const diagonalBias = Math.abs(y - player.y) * 0.23;
+    const score = clearance + diagonalBias;
+    if (score > bestScore) {
+      bestScore = score;
       bestClearance = clearance;
       bestY = y;
     }
@@ -681,7 +873,7 @@ function runAiCarrierLogic(room, player, now) {
           room.nextAiDecisionAt[team] = now + decisionCooldown;
           return;
         }
-      } else {
+      } else if (cpuDifficulty === "medium") {
         const picked = pickSmartShotY(room, player, attackGoalX, cpuProfile.shotSpread);
         const canShoot =
           distanceToGoal < shotDistance &&
@@ -691,15 +883,48 @@ function runAiCarrierLogic(room, player, now) {
           room.nextAiDecisionAt[team] = now + decisionCooldown;
           return;
         }
+      } else {
+        const pressure = getNearestOpponentDistance(room, player);
+        const passOption = getBestHardPassOption(room, player);
+        const hardShot = pickHardShotY(room, player, attackGoalX, cpuProfile.shotSpread);
+        const canNormalShot =
+          distanceToGoal < shotDistance && hardShot.clearance >= cpuProfile.openLaneMinClearance;
+        const canLongShot =
+          distanceToGoal < (cpuProfile.longShotDistance || 320) &&
+          hardShot.clearance >= (cpuProfile.longShotMinClearance || 26);
 
-        // Hard mode can offload quickly when heavily pressured.
-        if (cpuDifficulty === "hard" && getNearestOpponentDistance(room, player) < 52) {
+        const canComboPass =
+          passOption &&
+          passOption.laneClearance >= (cpuProfile.passMinLaneClearance || 16) &&
+          passOption.progress > 8;
+
+        if (canComboPass) {
+          const forcePass = pressure < 72;
+          const proactivePass = distanceToGoal > 180 && passOption.progress > 18 && Math.random() < 0.76;
+          const setupPass = canLongShot && passOption.receiverSpace > 30 && Math.random() < 0.56;
+          const directAssistChance =
+            distanceToGoal > 150 && passOption.progress > 14 && passOption.receiverSpace > 52;
+          if (forcePass || proactivePass || setupPass || directAssistChance) {
+            passBall(room, player, passOption.target, now, PASS_SPEED * 1.2);
+            room.nextAiDecisionAt[team] = now + 250;
+            return;
+          }
+        }
+
+        if (canNormalShot || (canLongShot && Math.random() < 0.62)) {
+          shootBall(room, player, attackGoalX, hardShot.y, now, SHOT_SPEED * cpuProfile.shotSpeedScale);
+          room.nextAiDecisionAt[team] = now + decisionCooldown;
+          return;
+        }
+
+        // Hard mode can still offload quickly when heavily pressured.
+        if (pressure < 62) {
           const forward = getBestForwardTarget(room, team, player);
           if (forward) {
             const direction = team === 0 ? 1 : -1;
             const progress = (forward.x - player.x) * direction;
-            if (progress > 8 && passBall(room, player, forward, now, PASS_SPEED * 1.05)) {
-              room.nextAiDecisionAt[team] = now + 420;
+            if (progress > 4 && passBall(room, player, forward, now, PASS_SPEED * 1.14)) {
+              room.nextAiDecisionAt[team] = now + 320;
               return;
             }
           }
@@ -730,7 +955,9 @@ function runAiCarrierLogic(room, player, now) {
     40,
     FIELD.height - 40
   );
-  player.moveSpeed = getOutfieldSpeedForTeam(room, team) * (cpuProfile ? cpuProfile.carrierSpeedScale : 0.92);
+  const aiCarryBaseSpeed =
+    getOutfieldSpeedForTeam(room, team) * (cpuProfile ? cpuProfile.carrierSpeedScale : 1);
+  player.moveSpeed = applyCarrySpeedRule(room, player, aiCarryBaseSpeed);
 }
 
 function setOutfieldTarget(room, player, context, now) {
@@ -739,6 +966,7 @@ function setOutfieldTarget(room, player, context, now) {
   const human = isHumanTeam(room, team);
   const cpuTeam = isCpuTeam(room, team);
   const cpuProfile = cpuTeam ? getCpuDifficultyProfile(room) : null;
+  const cpuDifficulty = cpuTeam ? normalizeCpuDifficulty(room.cpuDifficulty) : "easy";
   const isSelected = human && input.selectedId === player.id;
   const outfieldSpeed = getOutfieldSpeedForTeam(room, team);
   const defenderSpeed = getDefenderSpeedForTeam(room, team);
@@ -746,12 +974,30 @@ function setOutfieldTarget(room, player, context, now) {
   if (isSelected) {
     player.targetX = clamp(input.cursor.x, 0, FIELD.width);
     player.targetY = clamp(input.cursor.y, 0, FIELD.height);
-    player.moveSpeed = player.hasBall ? outfieldSpeed * 0.92 : outfieldSpeed;
+    player.moveSpeed = applyCarrySpeedRule(room, player, outfieldSpeed);
     return;
   }
 
   if (player.hasBall) {
     runAiCarrierLogic(room, player, now);
+    return;
+  }
+
+  if (
+    cpuTeam &&
+    cpuDifficulty === "hard" &&
+    context.owner &&
+    context.owner.team === team
+  ) {
+    const direction = team === 0 ? 1 : -1;
+    const laneSign = player.baseY <= FIELD.height / 2 ? -1 : 1;
+    const isPrimaryRunner = context.primaryRunnerId && context.primaryRunnerId === player.id;
+    const advance = isPrimaryRunner ? 175 : 130;
+    const laneOffset = isPrimaryRunner ? laneSign * 112 : -laneSign * 76;
+
+    player.targetX = clamp(context.owner.x + direction * advance, 70, FIELD.width - 70);
+    player.targetY = clamp(context.owner.y + laneOffset, 40, FIELD.height - 40);
+    player.moveSpeed = outfieldSpeed * 1.05;
     return;
   }
 
@@ -821,17 +1067,19 @@ function resolveTackles(room, now) {
     if (now <= challenger.kickLockUntil) {
       continue;
     }
-    let reach = challenger.radius + owner.radius + 2;
-    if (cpuProfile) {
-      if (challenger.team === 1) {
-        reach += cpuProfile.tackleReachCpuDelta;
-      } else if (owner.team === 1) {
-        reach += cpuProfile.tackleReachVsCpuDelta;
+    // Steal is allowed only when challenger touches the ball collider.
+    let touchRadius = challenger.radius + room.ball.radius;
+    if (cpuProfile && room.mode === "cpu") {
+      if (isCpuTeam(room, challenger.team)) {
+        touchRadius += cpuProfile.tackleReachCpuDelta || 0;
+      } else if (isCpuTeam(room, owner.team)) {
+        touchRadius += cpuProfile.tackleReachVsCpuDelta || 0;
       }
     }
-    const d = dist2(challenger.x, challenger.y, owner.x, owner.y);
-    if (d < reach * reach && d < bestDistance) {
-      bestDistance = d;
+    touchRadius = Math.max(room.ball.radius + 2, touchRadius);
+    const dBall = dist2(challenger.x, challenger.y, room.ball.x, room.ball.y);
+    if (dBall <= touchRadius * touchRadius && dBall < bestDistance) {
+      bestDistance = dBall;
       winner = challenger;
     }
   }
@@ -846,14 +1094,99 @@ function resolveTackles(room, now) {
   }
 }
 
+function checkGoalScored(room, now) {
+  const goalTop = FIELD.height / 2 - FIELD.goalWidth / 2;
+  const goalBottom = FIELD.height / 2 + FIELD.goalWidth / 2;
+  const leftGoalLineX = GOAL_LINE_INSET;
+  const rightGoalLineX = FIELD.width - GOAL_LINE_INSET;
+  const withinGoalMouth = room.ball.y >= goalTop && room.ball.y <= goalBottom;
+
+  if (!withinGoalMouth) {
+    return false;
+  }
+
+  if (room.ball.x - room.ball.radius <= leftGoalLineX) {
+    room.ball.x = clamp(
+      leftGoalLineX - GOAL_NET_DEPTH * 0.42,
+      room.ball.radius + 1,
+      leftGoalLineX - 1
+    );
+    room.ball.y = clamp(
+      room.ball.y,
+      goalTop + room.ball.radius + 2,
+      goalBottom - room.ball.radius - 2
+    );
+    scoreGoal(room, 1, now);
+    return true;
+  }
+
+  if (room.ball.x + room.ball.radius >= rightGoalLineX) {
+    room.ball.x = clamp(
+      rightGoalLineX + GOAL_NET_DEPTH * 0.42,
+      rightGoalLineX + 1,
+      FIELD.width - room.ball.radius - 1
+    );
+    room.ball.y = clamp(
+      room.ball.y,
+      goalTop + room.ball.radius + 2,
+      goalBottom - room.ball.radius - 2
+    );
+    scoreGoal(room, 0, now);
+    return true;
+  }
+
+  return false;
+}
+
 function updateBallPhysics(room, dt, now) {
   const owner = getBallOwner(room);
   if (owner) {
-    room.ball.x = owner.x + owner.dirX * (owner.radius + room.ball.radius + 1);
-    room.ball.y = owner.y + owner.dirY * (owner.radius + room.ball.radius + 1);
+    let facingX = owner.dirX;
+    let facingY = owner.dirY;
+    const facingLength = Math.hypot(facingX, facingY);
+    if (facingLength < 0.001) {
+      facingX = owner.team === 0 ? 1 : -1;
+      facingY = 0;
+    } else {
+      facingX /= facingLength;
+      facingY /= facingLength;
+    }
+    const perpX = -facingY;
+    const perpY = facingX;
+    const baseOffset = owner.radius + room.ball.radius + 1;
+    const pulse = Math.sin(now * BALL_CARRY_PULSE_FREQ);
+    const lateralPulse = Math.cos(now * BALL_CARRY_LATERAL_FREQ);
+    const offset = baseOffset + pulse * BALL_CARRY_PULSE_AMPLITUDE;
+    const lateral = lateralPulse * BALL_CARRY_LATERAL_AMPLITUDE;
+    room.ball.x = clamp(
+      owner.x + facingX * offset + perpX * lateral,
+      room.ball.radius,
+      FIELD.width - room.ball.radius
+    );
+    room.ball.y = clamp(
+      owner.y + facingY * offset + perpY * lateral,
+      room.ball.radius,
+      FIELD.height - room.ball.radius
+    );
     room.ball.vx = 0;
     room.ball.vy = 0;
+    room.ball.curveTurnRate = 0;
+    room.ball.curveUntil = 0;
+    if (checkGoalScored(room, now)) {
+      return;
+    }
     return;
+  }
+
+  if (now < room.ball.curveUntil && room.ball.curveTurnRate) {
+    const speed = Math.hypot(room.ball.vx, room.ball.vy);
+    if (speed > 6) {
+      const rotated = rotateVector(room.ball.vx, room.ball.vy, room.ball.curveTurnRate * dt);
+      room.ball.vx = rotated.x;
+      room.ball.vy = rotated.y;
+    }
+  } else if (room.ball.curveTurnRate) {
+    room.ball.curveTurnRate = 0;
   }
 
   room.ball.x += room.ball.vx * dt;
@@ -876,22 +1209,17 @@ function updateBallPhysics(room, dt, now) {
     room.ball.vy = -Math.abs(room.ball.vy) * 0.72;
   }
 
-  const goalTop = FIELD.height / 2 - FIELD.goalWidth / 2;
-  const goalBottom = FIELD.height / 2 + FIELD.goalWidth / 2;
+  const leftGoalLineX = GOAL_LINE_INSET;
+  const rightGoalLineX = FIELD.width - GOAL_LINE_INSET;
+  if (checkGoalScored(room, now)) {
+    return;
+  }
 
-  if (room.ball.x <= room.ball.radius) {
-    if (room.ball.y >= goalTop && room.ball.y <= goalBottom) {
-      scoreGoal(room, 1, now);
-      return;
-    }
-    room.ball.x = room.ball.radius;
+  if (room.ball.x <= leftGoalLineX + room.ball.radius) {
+    room.ball.x = leftGoalLineX + room.ball.radius;
     room.ball.vx = Math.abs(room.ball.vx) * 0.72;
-  } else if (room.ball.x >= FIELD.width - room.ball.radius) {
-    if (room.ball.y >= goalTop && room.ball.y <= goalBottom) {
-      scoreGoal(room, 0, now);
-      return;
-    }
-    room.ball.x = FIELD.width - room.ball.radius;
+  } else if (room.ball.x >= rightGoalLineX - room.ball.radius) {
+    room.ball.x = rightGoalLineX - room.ball.radius;
     room.ball.vx = -Math.abs(room.ball.vx) * 0.72;
   }
 
@@ -906,9 +1234,9 @@ function updateBallPhysics(room, dt, now) {
     if (now <= player.kickLockUntil) {
       continue;
     }
-    const pickupRadius = player.radius + room.ball.radius + 2;
+    const pickupRadius = player.radius + room.ball.radius;
     const d = dist2(player.x, player.y, room.ball.x, room.ball.y);
-    if (d < pickupRadius * pickupRadius && d < bestDistance) {
+    if (d <= pickupRadius * pickupRadius && d < bestDistance) {
       bestDistance = d;
       picked = player;
     }
@@ -919,12 +1247,55 @@ function updateBallPhysics(room, dt, now) {
   }
 }
 
+function updateGoalCelebration(room, dt, now) {
+  if (!room.goalPause || room.goalPause.stage !== "goal") {
+    return;
+  }
+
+  const scoringTeam = room.goalPause.scoringTeam;
+  const celebration = room.goalPause.celebration;
+  if (!celebration) {
+    return;
+  }
+  const scorers = room.teams[scoringTeam];
+  const phaseOffsets = celebration.phaseOffsets || [];
+
+  for (let i = 0; i < scorers.length; i += 1) {
+    const player = scorers[i];
+    const basePhase = phaseOffsets[i] || 0;
+    let targetX;
+    let targetY;
+
+    if (now < celebration.gatherUntil) {
+      targetX = celebration.anchorX + Math.cos(basePhase) * 15;
+      targetY = celebration.anchorY + Math.sin(basePhase) * 11;
+    } else {
+      const orbitAngle = (now - celebration.gatherUntil) * celebration.spinRate + basePhase;
+      targetX = celebration.anchorX + Math.cos(orbitAngle) * celebration.orbitRadiusX;
+      targetY = celebration.anchorY + Math.sin(orbitAngle) * celebration.orbitRadiusY;
+    }
+
+    player.targetX = clamp(targetX, 24, FIELD.width - 24);
+    player.targetY = clamp(targetY, 24, FIELD.height - 24);
+    player.moveSpeed = OUTFIELD_SPEED * 1.08;
+    movePlayer(player, dt);
+  }
+}
+
 function updateRoom(room, dt, now) {
   if (!room.started || room.ended) {
     return;
   }
 
+  if (room.paused) {
+    room.inputs[0].clicks = [];
+    room.inputs[1].clicks = [];
+    return;
+  }
+
   if (room.goalPause) {
+    updateGoalCelebration(room, dt, now);
+
     if (room.goalPause.stage === "goal" && now >= room.goalPause.goalUntil) {
       room.goalPause.stage = "score";
     }
@@ -965,10 +1336,13 @@ function updateRoom(room, dt, now) {
   const possessionTeam = owner ? owner.team : -1;
   const team0PressCount = isCpuTeam(room, 0) ? getCpuDifficultyProfile(room).pressCount : 1;
   const team1PressCount = isCpuTeam(room, 1) ? getCpuDifficultyProfile(room).pressCount : 1;
+  const team0PrimaryRunner = owner && owner.team === 0 ? getBestForwardTarget(room, 0, owner) : null;
+  const team1PrimaryRunner = owner && owner.team === 1 ? getBestForwardTarget(room, 1, owner) : null;
   const contexts = [
     {
       owner,
       possessionTeam,
+      primaryRunnerId: team0PrimaryRunner ? team0PrimaryRunner.id : null,
       closestFree: owner ? null : getClosestOutfield(room, 0, room.ball.x, room.ball.y),
       presserIds: new Set(
         owner && owner.team !== 0
@@ -979,6 +1353,7 @@ function updateRoom(room, dt, now) {
     {
       owner,
       possessionTeam,
+      primaryRunnerId: team1PrimaryRunner ? team1PrimaryRunner.id : null,
       closestFree: owner ? null : getClosestOutfield(room, 1, room.ball.x, room.ball.y),
       presserIds: new Set(
         owner && owner.team !== 1
@@ -1013,6 +1388,7 @@ function serializeState(room) {
     code: room.code,
     score: room.score,
     timeLeftMs: Math.ceil(room.timeLeftMs),
+    paused: Boolean(room.paused),
     ended: room.ended,
     players: room.allPlayers.map((player) => ({
       id: player.id,
@@ -1020,6 +1396,8 @@ function serializeState(room) {
       role: player.role,
       x: round1(player.x),
       y: round1(player.y),
+      dirX: round1(player.dirX),
+      dirY: round1(player.dirY),
       radius: player.radius,
       hasBall: player.hasBall
     })),
@@ -1031,7 +1409,13 @@ function serializeState(room) {
     goalPause: room.goalPause
       ? {
           stage: room.goalPause.stage,
-          scoringTeam: room.goalPause.scoringTeam
+          scoringTeam: room.goalPause.scoringTeam,
+          celebration: room.goalPause.celebration
+            ? {
+                anchorX: round1(room.goalPause.celebration.anchorX),
+                anchorY: round1(room.goalPause.celebration.anchorY)
+              }
+            : null
         }
       : null,
     selected: [room.inputs[0].selectedId, room.inputs[1].selectedId],
@@ -1245,6 +1629,7 @@ async function handleApi(req, res, pathname, searchParams) {
     room.cpuDifficulty = cpuDifficulty;
     room.started = true;
     room.timeLeftMs = MATCH_TIME_MS;
+    room.paused = false;
     room.ended = false;
     room.endReason = null;
     room.abandonedTeam = null;
@@ -1281,6 +1666,7 @@ async function handleApi(req, res, pathname, searchParams) {
     room.started = false;
     room.ready = [false, false];
     room.timeLeftMs = MATCH_TIME_MS;
+    room.paused = false;
     room.ended = false;
     room.endReason = null;
     room.abandonedTeam = null;
@@ -1337,6 +1723,7 @@ async function handleApi(req, res, pathname, searchParams) {
     room.endReason = null;
     room.abandonedTeam = null;
     room.timeLeftMs = MATCH_TIME_MS;
+    room.paused = false;
 
     const token = createSession(room.id, 1);
     room.sessionTokens[1] = token;
@@ -1380,6 +1767,7 @@ async function handleApi(req, res, pathname, searchParams) {
     if (room.ready[0] && room.ready[1]) {
       room.started = true;
       room.timeLeftMs = MATCH_TIME_MS;
+      room.paused = false;
       room.goalPause = null;
       resetForKickoff(room, Math.random() < 0.5 ? 0 : 1, Date.now());
       sendJson(res, 200, { ok: true, status: "started" });
@@ -1399,7 +1787,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
 
     const room = rooms.get(session.roomId);
-    if (!room || !room.started || room.ended || room.goalPause) {
+    if (!room || !room.started || room.ended || room.goalPause || room.paused) {
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -1426,7 +1814,7 @@ async function handleApi(req, res, pathname, searchParams) {
       return;
     }
 
-    if (room.goalPause) {
+    if (room.goalPause || room.paused) {
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -1451,7 +1839,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
 
     const room = rooms.get(session.roomId);
-    if (!room || !room.started || room.ended || room.goalPause) {
+    if (!room || !room.started || room.ended || room.goalPause || room.paused) {
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -1489,7 +1877,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
 
     const room = rooms.get(session.roomId);
-    if (!room || !room.started || room.ended || room.goalPause) {
+    if (!room || !room.started || room.ended || room.goalPause || room.paused) {
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -1515,7 +1903,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
 
     const room = rooms.get(session.roomId);
-    if (!room || !room.started || room.ended || room.goalPause) {
+    if (!room || !room.started || room.ended || room.goalPause || room.paused) {
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -1524,6 +1912,52 @@ async function handleApi(req, res, pathname, searchParams) {
     const y = clamp(toNumber(body.y, FIELD.height / 2), 0, FIELD.height);
     handleDirectionalAction(room, session.team, x, y, Date.now());
 
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (pathname === "/api/pause" && req.method === "POST") {
+    const body = await parseBody(req);
+    const session = touchSession(String(body.token || ""));
+    if (!session) {
+      sendJson(res, 401, { ok: false, message: "Invalid session token." });
+      return;
+    }
+
+    const room = rooms.get(session.roomId);
+    if (!room || !room.started || room.ended) {
+      sendJson(res, 200, { ok: true, paused: false });
+      return;
+    }
+
+    const desiredPaused =
+      typeof body.paused === "boolean" ? body.paused : !room.paused;
+    room.paused = desiredPaused;
+    room.inputs[0].clicks = [];
+    room.inputs[1].clicks = [];
+    sendJson(res, 200, { ok: true, paused: room.paused });
+    return;
+  }
+
+  if (pathname === "/api/end-match" && req.method === "POST") {
+    const body = await parseBody(req);
+    const session = touchSession(String(body.token || ""));
+    if (!session) {
+      sendJson(res, 401, { ok: false, message: "Invalid session token." });
+      return;
+    }
+
+    const room = rooms.get(session.roomId);
+    if (!room || !room.started || room.ended) {
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    room.paused = false;
+    room.goalPause = null;
+    room.ended = true;
+    room.endReason = "ended";
+    room.endedAt = Date.now();
     sendJson(res, 200, { ok: true });
     return;
   }

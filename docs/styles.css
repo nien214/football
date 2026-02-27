@@ -6,6 +6,7 @@
   --primary-hover: #196338;
   --text: #132313;
   --error: #b12f2f;
+  --field-max-width: 1000px;
 }
 
 * {
@@ -17,7 +18,7 @@ body {
   font-family: "Trebuchet MS", "Segoe UI", sans-serif;
   background: radial-gradient(circle at top, #1a4f2f, var(--bg) 65%);
   color: var(--text);
-  min-height: 100vh;
+  min-height: 100svh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -26,12 +27,17 @@ body {
 
 .app {
   width: min(1000px, 98vw);
+  max-width: 100%;
   position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
 
 .field-wrap {
   position: relative;
-  width: 100%;
+  width: min(100%, var(--field-max-width));
   margin: 0;
 }
 
@@ -104,6 +110,38 @@ body {
   margin: 8px 0 10px;
 }
 
+.input-mode-group {
+  margin: 0 0 10px;
+  border: 1px solid #8ca486;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.input-mode-group legend {
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a3521;
+}
+
+.input-mode-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.input-mode-option input[type="radio"] {
+  margin: 0;
+  accent-color: #1f7a45;
+}
+
 .mode-btn {
   border: 1px solid #4f654f;
   background: #f8f4e2;
@@ -159,6 +197,7 @@ body {
   padding: 10px;
   background: var(--primary);
   color: #fff;
+  font: inherit;
   cursor: pointer;
 }
 
@@ -231,7 +270,7 @@ body {
   position: absolute;
   left: 14px;
   right: 14px;
-  top: 12px;
+  top: -44px;
   z-index: 4;
   pointer-events: none;
   color: #f4ffe8;
@@ -320,6 +359,36 @@ body {
   background: #050505;
 }
 
+.pause-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 12, 5, 0.58);
+}
+
+.pause-card {
+  width: min(340px, calc(100% - 28px));
+  text-align: center;
+  background: rgba(244, 236, 216, 0.97);
+  color: #102616;
+  border: 2px solid #29422f;
+  border-radius: 12px;
+  padding: 16px 14px;
+}
+
+.pause-card h2 {
+  margin: 0 0 12px;
+  font-size: 34px;
+}
+
+.pause-actions {
+  display: grid;
+  gap: 8px;
+}
+
 .result-overlay {
   position: absolute;
   inset: 0;
@@ -390,6 +459,104 @@ body {
   font-size: 14px;
 }
 
+.virtual-controls {
+  width: min(100%, var(--field-max-width));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 2px calc(8px + env(safe-area-inset-bottom));
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.v-main-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: end;
+}
+
+.v-stick-side {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.vstick-base {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 30%, #f3f2d6, #d5d3b5 70%);
+  border: 2px solid rgba(35, 58, 38, 0.75);
+  box-shadow: inset 0 5px 16px rgba(0, 0, 0, 0.2);
+  touch-action: none;
+}
+
+.vstick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffffff, #dadfd9 72%);
+  border: 2px solid rgba(22, 39, 26, 0.8);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+
+.v-action-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.v-number-row {
+  display: flex;
+  gap: 8px;
+}
+
+.v-number-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid #3f5b40;
+  background: #edf7e8;
+  color: #17331c;
+  font: 700 18px/1 "Trebuchet MS", "Segoe UI", sans-serif;
+  touch-action: manipulation;
+}
+
+.v-action-btn {
+  width: 136px;
+  height: 64px;
+  border-radius: 999px;
+  border: 0;
+  background: linear-gradient(180deg, #3aa55f, #1f7a45);
+  color: #fff;
+  font: 700 17px/1 "Trebuchet MS", "Segoe UI", sans-serif;
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.28);
+  touch-action: manipulation;
+}
+
+.v-bottom-row {
+  display: flex;
+  justify-content: center;
+}
+
+.v-pause-btn {
+  min-width: 96px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid #3f5b40;
+  background: #edf7e8;
+  color: #17331c;
+  font: 700 15px/1 "Trebuchet MS", "Segoe UI", sans-serif;
+  touch-action: manipulation;
+}
+
 .hidden {
   display: none;
 }
@@ -402,7 +569,7 @@ body {
   .hud {
     left: 10px;
     right: 10px;
-    top: 8px;
+    top: -32px;
   }
 
   .hud-score,
@@ -418,5 +585,54 @@ body {
     right: 12px;
     bottom: 10px;
     font-size: 28px;
+  }
+}
+
+@media (max-width: 900px) and (orientation: portrait) {
+  body {
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  }
+
+  .app {
+    width: 100%;
+    max-width: 100%;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .field-wrap {
+    margin: 0 auto;
+  }
+
+  .hud {
+    top: -30px;
+  }
+
+  .v-main-row {
+    gap: 12px;
+  }
+
+  .vstick-base {
+    width: 118px;
+    height: 118px;
+  }
+
+  .vstick-knob {
+    width: 52px;
+    height: 52px;
+  }
+
+  .v-action-btn {
+    width: 124px;
+    height: 58px;
+    font-size: 15px;
+  }
+
+  .v-number-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
   }
 }

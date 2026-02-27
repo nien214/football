@@ -1,10 +1,16 @@
 const FIELD_WIDTH = 1000;
 const FIELD_HEIGHT = 620;
-const GOAL_WIDTH = 220;
+const GOAL_WIDTH = 190;
+const GOAL_LINE_INSET = 80;
+const GOAL_NET_DEPTH = 170;
+const GOAL_BOX_DEPTH = 115;
 const KEYBOARD_CURSOR_SPEED = 420;
+const VSTICK_CURSOR_SPEED = 440;
 const STATE_POLL_MS = 40;
 const REAL_MATCH_MS = 2 * 60 * 1000;
 const VIRTUAL_MATCH_SECONDS = 90 * 60;
+const SPRITE_FACING_OFFSET = Math.PI / 2;
+const HAND_POSE_INTERVAL_MS = 220;
 const REMOTE_API_BASE = "https://football-2kxo.onrender.com";
 const API_BASE =
   window.location.hostname === "localhost" ||
@@ -76,6 +82,7 @@ const nameInput = document.getElementById("nameInput");
 const countrySelect = document.getElementById("countrySelect");
 const modeCpuBtn = document.getElementById("modeCpuBtn");
 const modeOnlineBtn = document.getElementById("modeOnlineBtn");
+const inputModeInputs = Array.from(document.querySelectorAll("input[name='inputMode']"));
 const cpuControls = document.getElementById("cpuControls");
 const onlineControls = document.getElementById("onlineControls");
 const startCpuBtn = document.getElementById("startCpuBtn");
@@ -88,15 +95,27 @@ const closeHowToPlayBtn = document.getElementById("closeHowToPlayBtn");
 const howToPlayOverlay = document.getElementById("howToPlayOverlay");
 const goalGifOverlay = document.getElementById("goalGifOverlay");
 const goalGif = document.getElementById("goalGif");
+const pauseOverlay = document.getElementById("pauseOverlay");
+const pauseContinueBtn = document.getElementById("pauseContinueBtn");
+const pauseEndBtn = document.getElementById("pauseEndBtn");
 const preloadOverlay = document.getElementById("preloadOverlay");
 const preloadLoading = document.getElementById("preloadLoading");
 const preloadDots = document.getElementById("preloadDots");
+const virtualControls = document.getElementById("virtualControls");
+const vstickBase = document.getElementById("vstickBase");
+const vstickKnob = document.getElementById("vstickKnob");
+const vActionBtn = document.getElementById("vActionBtn");
+const vBtn1 = document.getElementById("vBtn1");
+const vBtn2 = document.getElementById("vBtn2");
+const vBtn3 = document.getElementById("vBtn3");
+const vPauseBtn = document.getElementById("vPauseBtn");
 const cpuDifficultyInputs = Array.from(
   document.querySelectorAll("input[name='cpuDifficulty']")
 );
 
 const canvas = document.getElementById("pitch");
 const ctx = canvas.getContext("2d");
+const appRoot = document.querySelector(".app");
 
 const CPU_COUNTRIES = [
   "🇧🇷 Brazil",
@@ -134,6 +153,12 @@ const BRAZIL_GIFS = CELEBRATION_GIFS.filter((src) =>
 const ARGENTINA_GIFS = CELEBRATION_GIFS.filter((src) =>
   src.toLowerCase().includes("/arg_")
 );
+const NON_BRAZIL_GIFS = CELEBRATION_GIFS.filter(
+  (src) => !src.toLowerCase().includes("/bra_")
+);
+const NON_ARGENTINA_GIFS = CELEBRATION_GIFS.filter(
+  (src) => !src.toLowerCase().includes("/arg_")
+);
 const REQUIRED_ASSETS = [
   ...CELEBRATION_GIFS,
   "assets/crowd.mp3",
@@ -162,6 +187,7 @@ const whistleSfxPool = createSfxPool("assets/whistle.mp3", 0.92);
 
 let token = null;
 let mode = "cpu";
+let inputMode = "mouse";
 let myTeam = 0;
 let state = null;
 let gameActive = false;
@@ -173,6 +199,7 @@ let pollInFlight = false;
 let lastStatus = "";
 let currentMatchMode = "cpu";
 let crowdShouldPlay = false;
+let crowdMuted = false;
 let hasUserInteracted = false;
 let assetsReady = false;
 let assetsPreloadPromise = null;
@@ -186,12 +213,19 @@ const sfxStopTimers = new WeakMap();
 const goalOverlayState = {
   stage: null
 };
+let lastGoalGifSrc = "";
 const keyboardMove = {
   up: false,
   down: false,
   left: false,
   right: false
 };
+const virtualStick = {
+  pointerId: null,
+  x: 0,
+  y: 0
+};
+const playerAnimCache = new Map();
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -223,6 +257,76 @@ function normalizeCode4(raw) {
   return String(raw || "").replace(/\D/g, "").slice(0, 4);
 }
 
+function normalizeInputMode(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  if (value === "keyboard" || value === "vstick") {
+    return value;
+  }
+  return "mouse";
+}
+
+function isMouseInputMode() {
+  return inputMode === "mouse";
+}
+
+function isVStickInputMode() {
+  return inputMode === "vstick";
+}
+
+function isPortraitViewport() {
+  return window.matchMedia("(orientation: portrait)").matches;
+}
+
+function shouldShowVirtualControls() {
+  return gameActive && isVStickInputMode() && isPortraitViewport();
+}
+
+function updateFieldLayout() {
+  const viewportW = Math.max(320, window.innerWidth || document.documentElement.clientWidth || 0);
+  const viewportH = Math.max(320, window.innerHeight || document.documentElement.clientHeight || 0);
+  const portrait = viewportH >= viewportW;
+  const controlsVisible = shouldShowVirtualControls();
+  let reservedHeight = portrait ? 120 : 76;
+  if (controlsVisible) {
+    reservedHeight += 195;
+  }
+  const maxByHeight = ((viewportH - reservedHeight) * FIELD_WIDTH) / FIELD_HEIGHT;
+  const maxByWidth = viewportW - (portrait ? 16 : 20);
+  const fieldMaxWidth = Math.floor(clamp(Math.min(1000, maxByHeight, maxByWidth), 280, 1000));
+  document.documentElement.style.setProperty("--field-max-width", `${fieldMaxWidth}px`);
+}
+
+function resetVirtualStick() {
+  virtualStick.pointerId = null;
+  virtualStick.x = 0;
+  virtualStick.y = 0;
+  if (vstickKnob) {
+    vstickKnob.style.transform = "translate(-50%, -50%)";
+  }
+}
+
+function syncVirtualControls() {
+  const showVirtualControls = shouldShowVirtualControls();
+  if (virtualControls) {
+    virtualControls.classList.toggle("hidden", !showVirtualControls);
+  }
+  if (appRoot) {
+    appRoot.classList.toggle("vstick-active", showVirtualControls);
+  }
+  if (!showVirtualControls) {
+    resetVirtualStick();
+  }
+  updateFieldLayout();
+}
+
+function setInputMode(nextMode) {
+  inputMode = normalizeInputMode(nextMode);
+  for (const input of inputModeInputs) {
+    input.checked = normalizeInputMode(input.value) === inputMode;
+  }
+  syncVirtualControls();
+}
+
 function resetOnlineStartFlow() {
   onlineStartFlowInFlight = false;
   onlineStartReadySent = false;
@@ -241,6 +345,7 @@ function setMode(nextMode) {
   } else {
     setStatus("Online mode: create or join a room with a 4-digit code.");
   }
+  updateFieldLayout();
 }
 
 function populateCountries() {
@@ -283,6 +388,55 @@ function getCpuDifficulty() {
 function randomCpuCountry() {
   const index = Math.floor(Math.random() * CPU_COUNTRIES.length);
   return CPU_COUNTRIES[index] || "🇧🇷 Brazil";
+}
+
+function getHumanPlayerNumber(player) {
+  if (!player || player.team !== myTeam) {
+    return "";
+  }
+  const idText = String(player.id || "");
+  const parts = idText.split("-");
+  const rawIndex = Number(parts[1]);
+  if (!Number.isFinite(rawIndex)) {
+    return "";
+  }
+  const number = Math.trunc(rawIndex) + 1;
+  if (number < 1 || number > 3) {
+    return "";
+  }
+  return String(number);
+}
+
+function clearKeyboardMove() {
+  keyboardMove.up = false;
+  keyboardMove.down = false;
+  keyboardMove.left = false;
+  keyboardMove.right = false;
+}
+
+function isPausedState() {
+  return Boolean(state && state.paused);
+}
+
+function showPauseOverlay() {
+  if (pauseOverlay) {
+    pauseOverlay.classList.remove("hidden");
+  }
+}
+
+function hidePauseOverlay() {
+  if (pauseOverlay) {
+    pauseOverlay.classList.add("hidden");
+  }
+}
+
+function syncPauseOverlay() {
+  if (gameActive && isPausedState()) {
+    showPauseOverlay();
+    clearKeyboardMove();
+    return;
+  }
+  hidePauseOverlay();
 }
 
 function showPreloadOverlay() {
@@ -390,6 +544,11 @@ async function preloadOnInitialLaunch() {
 }
 
 function syncCrowdAudio() {
+  if (crowdMuted) {
+    crowdAudio.pause();
+    return;
+  }
+
   if (crowdShouldPlay && hasUserInteracted) {
     if (crowdAudio.paused) {
       const playAttempt = crowdAudio.play();
@@ -405,7 +564,7 @@ function syncCrowdAudio() {
 }
 
 function keepCrowdAlive() {
-  if (!crowdShouldPlay || !hasUserInteracted) {
+  if (!crowdShouldPlay || !hasUserInteracted || crowdMuted) {
     return;
   }
   if (!crowdAudio.paused) {
@@ -425,6 +584,20 @@ function startCrowdAudio() {
 function stopCrowdAudio() {
   crowdShouldPlay = false;
   syncCrowdAudio();
+}
+
+function toggleCrowdMute() {
+  crowdMuted = !crowdMuted;
+  if (crowdMuted) {
+    // Stop any in-flight goal sound immediately when crowd is muted.
+    stopSfxPoolNow(goalSfxPool);
+  }
+  syncCrowdAudio();
+  if (gameActive) {
+    setStatus(
+      crowdMuted ? "Crowd sound muted. Press C to unmute." : "Crowd sound on."
+    );
+  }
 }
 
 function playSfxParallel(templateAudio, maxDurationMs = 0) {
@@ -472,6 +645,25 @@ function playSfxParallel(templateAudio, maxDurationMs = 0) {
   return sfx;
 }
 
+function stopSfxPoolNow(pool) {
+  if (!Array.isArray(pool) || pool.length === 0) {
+    return;
+  }
+  for (const sfx of pool) {
+    const previousTimer = sfxStopTimers.get(sfx);
+    if (previousTimer) {
+      clearTimeout(previousTimer);
+      sfxStopTimers.delete(sfx);
+    }
+    try {
+      sfx.pause();
+      sfx.currentTime = 0;
+    } catch (err) {
+      // Ignore media reset errors.
+    }
+  }
+}
+
 function playGoalAudio() {
   keepCrowdAlive();
   playSfxParallel(goalSfxPool);
@@ -502,15 +694,48 @@ function playGoalGif() {
   const scoringTeam = state?.goalPause?.scoringTeam;
   const countryText = String(state?.profiles?.[scoringTeam]?.country || "");
   const countryLower = countryText.toLowerCase();
+  const isBrazilScorer = countryText.includes("🇧🇷") || countryLower.includes("brazil");
+  const isArgentinaScorer = countryText.includes("🇦🇷") || countryLower.includes("argentina");
 
   let pool = CELEBRATION_GIFS;
-  if (countryText.includes("🇧🇷") || countryLower.includes("brazil")) {
+  if (isBrazilScorer) {
     pool = BRAZIL_GIFS.length > 0 ? BRAZIL_GIFS : CELEBRATION_GIFS;
-  } else if (countryText.includes("🇦🇷") || countryLower.includes("argentina")) {
+  } else if (isArgentinaScorer) {
     pool = ARGENTINA_GIFS.length > 0 ? ARGENTINA_GIFS : CELEBRATION_GIFS;
+  } else {
+    pool = CELEBRATION_GIFS;
   }
 
-  const pick = pool[Math.floor(Math.random() * pool.length)];
+  if (!isArgentinaScorer) {
+    const noArg = pool.filter((src) => !src.toLowerCase().includes("/arg_"));
+    if (noArg.length > 0) {
+      pool = noArg;
+    } else if (NON_ARGENTINA_GIFS.length > 0) {
+      pool = NON_ARGENTINA_GIFS;
+    }
+  }
+
+  if (!isBrazilScorer) {
+    const noBra = pool.filter((src) => !src.toLowerCase().includes("/bra_"));
+    if (noBra.length > 0) {
+      pool = noBra;
+    } else if (NON_BRAZIL_GIFS.length > 0) {
+      pool = NON_BRAZIL_GIFS;
+    }
+  }
+
+  if (!Array.isArray(pool) || pool.length === 0) {
+    pool = CELEBRATION_GIFS;
+  }
+  let choices = pool;
+  if (lastGoalGifSrc && pool.length > 1) {
+    const filtered = pool.filter((src) => src !== lastGoalGifSrc);
+    if (filtered.length > 0) {
+      choices = filtered;
+    }
+  }
+  const pick = choices[Math.floor(Math.random() * choices.length)];
+  lastGoalGifSrc = pick;
   // Reset src first so repeated same GIF still replays from frame 1.
   goalGif.removeAttribute("src");
   goalGif.src = pick;
@@ -520,6 +745,7 @@ function playGoalGif() {
 function showMenu() {
   menu.classList.remove("hidden");
   hud.classList.add("hidden");
+  hidePauseOverlay();
   hideResultOverlay();
   hideGoalGif();
   hidePreloadOverlay();
@@ -529,12 +755,15 @@ function showMenu() {
   stopCrowdAudio();
   hasPlayedEndWarningWhistle = false;
   resetOnlineStartFlow();
+  syncVirtualControls();
 }
 
 function showGame() {
   menu.classList.add("hidden");
   hud.classList.remove("hidden");
   hidePreloadOverlay();
+  syncPauseOverlay();
+  syncVirtualControls();
 }
 
 function hideResultOverlay() {
@@ -578,6 +807,35 @@ async function safeLeaveSession() {
   token = null;
   gameActive = false;
   resetOnlineStartFlow();
+}
+
+async function setMatchPaused(paused) {
+  if (!token || !gameActive) {
+    return;
+  }
+  try {
+    const response = await apiPost("/api/pause", { token, paused: !!paused });
+    if (state) {
+      state.paused = Boolean(response.paused);
+    }
+    syncPauseOverlay();
+    setStatus(state && state.paused ? "Match paused." : "Match resumed.");
+  } catch (err) {
+    setStatus(err.message || "Failed to change pause state.", true);
+  }
+}
+
+async function endMatchNow() {
+  if (!token || !gameActive) {
+    return;
+  }
+  try {
+    await apiPost("/api/end-match", { token });
+    hidePauseOverlay();
+    setStatus("Ending match...");
+  } catch (err) {
+    setStatus(err.message || "Failed to end match.", true);
+  }
 }
 
 function startPolling() {
@@ -655,6 +913,7 @@ async function pollState() {
 function handleServerState(payload) {
   if (payload.status === "waiting") {
     gameActive = false;
+    clearKeyboardMove();
     showMenu();
     hideResultOverlay();
     goalOverlayState.stage = null;
@@ -677,6 +936,7 @@ function handleServerState(payload) {
     gameActive = false;
     state = null;
     roomCodeBox.classList.add("hidden");
+    hidePauseOverlay();
     hideResultOverlay();
     showGame();
     setStatus("Opponent joined. Loading match...");
@@ -717,7 +977,10 @@ function handleServerState(payload) {
     showGame();
     hideResultOverlay();
     updateHud();
-    if (payload.mode === "online") {
+    syncPauseOverlay();
+    if (state && state.paused) {
+      setStatus("Match paused.");
+    } else if (payload.mode === "online") {
       setStatus(`Online match started. Room ${payload.code}.`);
     } else {
       setStatus("CPU match started.");
@@ -730,9 +993,11 @@ function handleServerState(payload) {
     myTeam = payload.team;
     state = payload.state;
     gameActive = false;
+    clearKeyboardMove();
     stopCrowdAudio();
     goalOverlayState.stage = null;
     hideGoalGif();
+    hidePauseOverlay();
     showGame();
     updateHud();
     showResultOverlay(payload.winner === "Draw" ? "Match Drawn" : `${payload.winner} Wins`);
@@ -745,9 +1010,11 @@ function handleServerState(payload) {
     myTeam = payload.team;
     state = payload.state || state;
     gameActive = false;
+    clearKeyboardMove();
     stopCrowdAudio();
     goalOverlayState.stage = null;
     hideGoalGif();
+    hidePauseOverlay();
     showMenu();
     hideResultOverlay();
     updateHud();
@@ -821,8 +1088,12 @@ function isTypingTarget(event) {
 }
 
 function updateKeyboardCursor(deltaMs) {
-  const dx = (keyboardMove.right ? 1 : 0) - (keyboardMove.left ? 1 : 0);
-  const dy = (keyboardMove.down ? 1 : 0) - (keyboardMove.up ? 1 : 0);
+  const keyboardDx = (keyboardMove.right ? 1 : 0) - (keyboardMove.left ? 1 : 0);
+  const keyboardDy = (keyboardMove.down ? 1 : 0) - (keyboardMove.up ? 1 : 0);
+  const stickDx = isVStickInputMode() ? virtualStick.x : 0;
+  const stickDy = isVStickInputMode() ? virtualStick.y : 0;
+  const dx = keyboardDx + stickDx;
+  const dy = keyboardDy + stickDy;
   if (dx === 0 && dy === 0) {
     return;
   }
@@ -835,7 +1106,9 @@ function updateKeyboardCursor(deltaMs) {
   }
 
   const distance = Math.hypot(dx, dy) || 1;
-  const step = (KEYBOARD_CURSOR_SPEED * deltaMs) / 1000;
+  const normalized = clamp(distance, 0, 1);
+  const baseSpeed = isVStickInputMode() ? VSTICK_CURSOR_SPEED : KEYBOARD_CURSOR_SPEED;
+  const step = ((baseSpeed * deltaMs) / 1000) * normalized;
   pendingCursor.x = clamp(pendingCursor.x + (dx / distance) * step, 0, FIELD_WIDTH);
   pendingCursor.y = clamp(pendingCursor.y + (dy / distance) * step, 0, FIELD_HEIGHT);
 }
@@ -848,6 +1121,39 @@ function worldPosFromMouse(event) {
     x: clamp(x, 0, FIELD_WIDTH),
     y: clamp(y, 0, FIELD_HEIGHT)
   };
+}
+
+function sendCurrentDirectionalAction() {
+  const carrier = getMyBallCarrier();
+  if (!carrier) {
+    return;
+  }
+  const actionPoint = pendingCursor || { x: carrier.x, y: carrier.y };
+  sendAction(actionPoint.x, actionPoint.y);
+}
+
+function updateVirtualStickFromPointer(event) {
+  if (!vstickBase) {
+    return;
+  }
+  const rect = vstickBase.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  const maxRadius = Math.max(20, rect.width * 0.32);
+  let dx = event.clientX - centerX;
+  let dy = event.clientY - centerY;
+  const distance = Math.hypot(dx, dy);
+  if (distance > maxRadius) {
+    const scale = maxRadius / Math.max(distance, 0.001);
+    dx *= scale;
+    dy *= scale;
+  }
+
+  virtualStick.x = clamp(dx / maxRadius, -1, 1);
+  virtualStick.y = clamp(dy / maxRadius, -1, 1);
+  if (vstickKnob) {
+    vstickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+  }
 }
 
 function formatClock(ms) {
@@ -872,18 +1178,27 @@ function updateHud() {
 }
 
 function drawField() {
+  const playableLeft = GOAL_LINE_INSET;
+  const playableRight = FIELD_WIDTH - GOAL_LINE_INSET;
+  const playableWidth = playableRight - playableLeft;
   ctx.clearRect(0, 0, FIELD_WIDTH, FIELD_HEIGHT);
+
+  // Base grass for full canvas, including area outside the touch lines.
   ctx.fillStyle = "#2b8f4c";
   ctx.fillRect(0, 0, FIELD_WIDTH, FIELD_HEIGHT);
 
-  for (let i = 0; i < 10; i += 1) {
+  // Extend the same stripe pattern beyond field lines so margins match the pitch.
+  const laneWidth = playableWidth / 10;
+  const stripeStartX = playableLeft - laneWidth * 2;
+  const stripeCount = Math.ceil((FIELD_WIDTH - stripeStartX) / laneWidth) + 1;
+  for (let i = 0; i < stripeCount; i += 1) {
     ctx.fillStyle = i % 2 === 0 ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.01)";
-    ctx.fillRect((FIELD_WIDTH / 10) * i, 0, FIELD_WIDTH / 10, FIELD_HEIGHT);
+    ctx.fillRect(stripeStartX + laneWidth * i, 0, laneWidth, FIELD_HEIGHT);
   }
 
   ctx.strokeStyle = "#f6fff0";
   ctx.lineWidth = 3;
-  ctx.strokeRect(2, 2, FIELD_WIDTH - 4, FIELD_HEIGHT - 4);
+  ctx.strokeRect(playableLeft, 2, playableWidth, FIELD_HEIGHT - 4);
 
   ctx.beginPath();
   ctx.moveTo(FIELD_WIDTH / 2, 0);
@@ -895,12 +1210,268 @@ function drawField() {
   ctx.stroke();
 
   const goalTop = FIELD_HEIGHT / 2 - GOAL_WIDTH / 2;
-  ctx.strokeRect(0, goalTop, 115, GOAL_WIDTH);
-  ctx.strokeRect(FIELD_WIDTH - 115, goalTop, 115, GOAL_WIDTH);
+  const goalBottom = goalTop + GOAL_WIDTH;
 
-  ctx.fillStyle = "rgba(255,255,255,0.25)";
-  ctx.fillRect(-8, goalTop + 20, 8, GOAL_WIDTH - 40);
-  ctx.fillRect(FIELD_WIDTH, goalTop + 20, 8, GOAL_WIDTH - 40);
+  // Penalty box lines from each goal line.
+  ctx.strokeRect(playableLeft, goalTop, GOAL_BOX_DEPTH, GOAL_WIDTH);
+  ctx.strokeRect(playableRight - GOAL_BOX_DEPTH, goalTop, GOAL_BOX_DEPTH, GOAL_WIDTH);
+
+  function drawGoalNet(frontX, backX) {
+    const left = Math.min(frontX, backX);
+    const right = Math.max(frontX, backX);
+    const netTop = goalTop;
+    const netBottom = goalBottom;
+    const netHeight = Math.max(2, netBottom - netTop);
+
+    ctx.fillStyle = "rgba(236, 244, 250, 0.22)";
+    ctx.fillRect(left, netTop + 1, right - left, netHeight - 2);
+
+    ctx.strokeStyle = "rgba(240, 248, 255, 0.42)";
+    ctx.lineWidth = 1;
+    for (let x = left + 8; x < right; x += 8) {
+      ctx.beginPath();
+      ctx.moveTo(x, netTop + 2);
+      ctx.lineTo(x, netBottom - 2);
+      ctx.stroke();
+    }
+    for (let y = netTop + 10; y < netBottom; y += 10) {
+      ctx.beginPath();
+      ctx.moveTo(left + 1, y);
+      ctx.lineTo(right - 1, y);
+      ctx.stroke();
+    }
+
+    // Full size frame.
+    ctx.strokeStyle = "#f6fff0";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(frontX, netTop);
+    ctx.lineTo(frontX, netBottom);
+    ctx.moveTo(frontX, netTop);
+    ctx.lineTo(backX, netTop);
+    ctx.moveTo(frontX, netBottom);
+    ctx.lineTo(backX, netBottom);
+    ctx.moveTo(backX, netTop);
+    ctx.lineTo(backX, netBottom);
+    ctx.stroke();
+  }
+
+  drawGoalNet(playableLeft, playableLeft - GOAL_NET_DEPTH);
+  drawGoalNet(playableRight, playableRight + GOAL_NET_DEPTH);
+}
+
+function getPlayerAnimationFrame(player, nowMs, forceHandSwing = false) {
+  let anim = playerAnimCache.get(player.id);
+  if (!anim) {
+    anim = {
+      lastX: player.x,
+      lastY: player.y,
+      dirX: player.team === 0 ? 1 : -1,
+      dirY: 0,
+      phase: Math.random() * Math.PI * 2,
+      runBlend: 0,
+      handPose: 1,
+      handPoseTimer: 0,
+      moveHoldMs: 0,
+      lastSeenAt: nowMs
+    };
+    playerAnimCache.set(player.id, anim);
+    return {
+      dirX: anim.dirX,
+      dirY: anim.dirY,
+      phase: anim.phase,
+      runBlend: 0,
+      handPose: anim.handPose,
+      handActive: false,
+      moving: false,
+      swing: 0
+    };
+  }
+
+  const deltaMs = Math.max(1, nowMs - anim.lastSeenAt);
+  const dx = player.x - anim.lastX;
+  const dy = player.y - anim.lastY;
+  const moved = Math.hypot(dx, dy);
+  const instantMoving = moved > 0.08;
+
+  const hasServerDir = Number.isFinite(player.dirX) && Number.isFinite(player.dirY);
+  if (hasServerDir) {
+    const serverLen = Math.hypot(player.dirX, player.dirY);
+    if (serverLen > 0.001) {
+      anim.dirX = player.dirX / serverLen;
+      anim.dirY = player.dirY / serverLen;
+    }
+  }
+
+  if (instantMoving) {
+    const len = Math.max(0.001, moved);
+    if (!hasServerDir) {
+      anim.dirX = dx / len;
+      anim.dirY = dy / len;
+    }
+    anim.moveHoldMs = 220;
+  } else {
+    anim.moveHoldMs = Math.max(0, (anim.moveHoldMs || 0) - deltaMs);
+  }
+  const moving = anim.moveHoldMs > 0;
+
+  const targetBlend = moving ? 1 : 0;
+  const blendStep = clamp(deltaMs / 200, 0, 1);
+  const currentBlend = Number.isFinite(anim.runBlend) ? anim.runBlend : 0;
+  anim.runBlend = currentBlend + (targetBlend - currentBlend) * blendStep;
+
+  const handActive = moving && (Boolean(player.hasBall) || Boolean(forceHandSwing));
+  if (handActive) {
+    anim.handPoseTimer = (anim.handPoseTimer || 0) + deltaMs;
+    if (anim.handPoseTimer >= HAND_POSE_INTERVAL_MS) {
+      const flips = Math.floor(anim.handPoseTimer / HAND_POSE_INTERVAL_MS);
+      anim.handPoseTimer -= flips * HAND_POSE_INTERVAL_MS;
+      if (flips % 2 === 1) {
+        anim.handPose = anim.handPose === -1 ? 1 : -1;
+      }
+    }
+  } else {
+    anim.handPoseTimer = 0;
+  }
+
+  anim.lastX = player.x;
+  anim.lastY = player.y;
+  anim.lastSeenAt = nowMs;
+
+  anim.phase += (deltaMs / 1000) * 0.2;
+  const swingBase = Math.sin(anim.phase);
+  const swingScale = moving ? 1 : 0.2;
+  return {
+    dirX: anim.dirX,
+    dirY: anim.dirY,
+    phase: anim.phase,
+    runBlend: anim.runBlend,
+    handPose: anim.handPose,
+    handActive,
+    moving,
+    swing: swingBase * swingScale
+  };
+}
+
+function drawPlayerFigure(player, isSelected, nowMs, facingAngle, forceHandSwing = false) {
+  const anim = getPlayerAnimationFrame(player, nowMs, forceHandSwing);
+  const isLeft = player.team === 0;
+  const shirt = isLeft ? "#1f87e5" : "#e74d3d";
+  const head = "#8b4a00";
+  const hand = "#ff9761";
+  const r = player.radius * 1.12;
+  const angle = (Number.isFinite(facingAngle) ? facingAngle : 0) + SPRITE_FACING_OFFSET;
+  const runBlend = Number.isFinite(anim.runBlend) ? anim.runBlend : anim.moving ? 1 : 0;
+  const handStep = anim.handPose === -1 ? -1 : 1;
+  const bodyRx = r * 0.96;
+  const bodyRy = r * 0.5;
+
+  if (isSelected) {
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, r + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = "#ffe45e";
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  }
+
+  if (player.hasBall) {
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, r + 1.4, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,255,255,0.7)";
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+  }
+
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.rotate(angle);
+
+  // Strict flat body style from reference.
+  ctx.fillStyle = shirt;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, bodyRx, bodyRy, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Big head in the middle.
+  ctx.fillStyle = head;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.33, 0, Math.PI * 2);
+  ctx.fill();
+
+  const playerNumber = getHumanPlayerNumber(player);
+  if (playerNumber) {
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `bold ${Math.max(7, Math.round(r * 0.44))}px Trebuchet MS`;
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = "rgba(0,0,0,0.62)";
+    ctx.strokeText(playerNumber, 0, 0.4);
+    ctx.fillStyle = "#f8f8f8";
+    ctx.fillText(playerNumber, 0, 0.4);
+  }
+
+  // Two-step hand animation only while running.
+  if (anim.handActive && runBlend > 0.03) {
+    const leftHandX = -bodyRx - r * 0.06;
+    const rightHandX = bodyRx + r * 0.06;
+    const handTopY = -r * 0.34;
+    const handBottomY = r * 0.34;
+    const leftHandY = handStep > 0 ? handTopY : handBottomY;
+    const rightHandY = handStep > 0 ? handBottomY : handTopY;
+    ctx.fillStyle = hand;
+    ctx.beginPath();
+    ctx.ellipse(leftHandX, leftHandY, r * 0.15, r * 0.44, 0, 0, Math.PI * 2);
+    ctx.ellipse(rightHandX, rightHandY, r * 0.15, r * 0.44, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function getFacingAngleForPlayer(player, isSelected) {
+  if (!player) {
+    return 0;
+  }
+
+  const celebration = state?.goalPause?.celebration;
+  if (
+    state?.goalPause?.stage === "goal" &&
+    player.team === state.goalPause.scoringTeam &&
+    celebration &&
+    Number.isFinite(celebration.anchorX) &&
+    Number.isFinite(celebration.anchorY)
+  ) {
+    const dx = celebration.anchorX - player.x;
+    const dy = celebration.anchorY - player.y;
+    if (Math.hypot(dx, dy) > 1) {
+      return Math.atan2(dy, dx);
+    }
+  }
+
+  if (isSelected && pendingCursor) {
+    const dx = pendingCursor.x - player.x;
+    const dy = pendingCursor.y - player.y;
+    if (Math.hypot(dx, dy) > 1) {
+      return Math.atan2(dy, dx);
+    }
+  }
+
+  if (state?.ball) {
+    const dx = state.ball.x - player.x;
+    const dy = state.ball.y - player.y;
+    if (Math.hypot(dx, dy) > 1) {
+      return Math.atan2(dy, dx);
+    }
+  }
+
+  if (Number.isFinite(player.dirX) && Number.isFinite(player.dirY)) {
+    const len = Math.hypot(player.dirX, player.dirY);
+    if (len > 0.001) {
+      return Math.atan2(player.dirY, player.dirX);
+    }
+  }
+
+  return player.team === 0 ? 0 : Math.PI;
 }
 
 function drawState() {
@@ -908,41 +1479,24 @@ function drawState() {
     return;
   }
 
+  const nowMs = performance.now();
+  const activeIds = new Set(state.players.map((player) => player.id));
+  for (const cachedId of playerAnimCache.keys()) {
+    if (!activeIds.has(cachedId)) {
+      playerAnimCache.delete(cachedId);
+    }
+  }
+
   for (const player of state.players) {
-    const isLeft = player.team === 0;
-    const fill = isLeft ? "#2d6fff" : "#ff4a45";
-
-    ctx.beginPath();
-    ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
-    ctx.fillStyle = fill;
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "#ffffff";
-    ctx.stroke();
-
-    if (state.selected && player.team === myTeam && state.selected[myTeam] === player.id) {
-      ctx.beginPath();
-      ctx.arc(player.x, player.y, player.radius + 6, 0, Math.PI * 2);
-      ctx.strokeStyle = "#ffe45e";
-      ctx.lineWidth = 3;
-      ctx.stroke();
-    }
-
-    if (player.hasBall) {
-      ctx.beginPath();
-      ctx.arc(player.x, player.y, player.radius + 2, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(255,255,255,0.7)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
-
-    const shirt = String(Number(player.id.split("-")[1]) + 1);
-    const fontSize = Math.max(12, Math.round(player.radius * 0.72));
-    ctx.font = `${fontSize}px Trebuchet MS`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(shirt, player.x, player.y + 0.5);
+    const isSelected =
+      state.selected && player.team === myTeam && state.selected[myTeam] === player.id;
+    const celebratingScorer =
+      state.goalPause &&
+      state.goalPause.stage === "goal" &&
+      player.team === state.goalPause.scoringTeam;
+    const forceHandSwing = Boolean(isSelected || celebratingScorer);
+    const facingAngle = getFacingAngleForPlayer(player, isSelected);
+    drawPlayerFigure(player, isSelected, nowMs, facingAngle, forceHandSwing);
   }
 
   ctx.beginPath();
@@ -953,7 +1507,7 @@ function drawState() {
   ctx.strokeStyle = "#111";
   ctx.stroke();
 
-  if (gameActive && pendingCursor) {
+  if (gameActive && pendingCursor && isMouseInputMode()) {
     ctx.strokeStyle = "rgba(255,255,255,0.9)";
     ctx.lineWidth = 1.8;
     ctx.beginPath();
@@ -1030,6 +1584,13 @@ async function startCpuMatch(profile) {
 
 modeCpuBtn.addEventListener("click", () => setMode("cpu"));
 modeOnlineBtn.addEventListener("click", () => setMode("online"));
+for (const input of inputModeInputs) {
+  input.addEventListener("change", () => {
+    if (input.checked) {
+      setInputMode(input.value);
+    }
+  });
+}
 
 startCpuBtn.addEventListener("click", async () => {
   const profile = profilePayload();
@@ -1120,15 +1681,72 @@ codeInput.addEventListener("input", () => {
   codeInput.value = codeInput.value.replace(/\D/g, "").slice(0, 4);
 });
 
+function bindVirtualControlButton(button, handler) {
+  if (!button) {
+    return;
+  }
+  button.addEventListener("pointerdown", (event) => {
+    if (!shouldShowVirtualControls()) {
+      return;
+    }
+    hasUserInteracted = true;
+    syncCrowdAudio();
+    event.preventDefault();
+    handler();
+  });
+}
+
+if (vstickBase) {
+  vstickBase.addEventListener("pointerdown", (event) => {
+    if (!shouldShowVirtualControls()) {
+      return;
+    }
+    hasUserInteracted = true;
+    syncCrowdAudio();
+    virtualStick.pointerId = event.pointerId;
+    vstickBase.setPointerCapture(event.pointerId);
+    updateVirtualStickFromPointer(event);
+    event.preventDefault();
+  });
+
+  vstickBase.addEventListener("pointermove", (event) => {
+    if (!shouldShowVirtualControls() || virtualStick.pointerId !== event.pointerId) {
+      return;
+    }
+    updateVirtualStickFromPointer(event);
+    event.preventDefault();
+  });
+
+  const stopStick = (event) => {
+    if (virtualStick.pointerId !== event.pointerId) {
+      return;
+    }
+    resetVirtualStick();
+    event.preventDefault();
+  };
+  vstickBase.addEventListener("pointerup", stopStick);
+  vstickBase.addEventListener("pointercancel", stopStick);
+}
+
+bindVirtualControlButton(vActionBtn, () => {
+  sendCurrentDirectionalAction();
+});
+bindVirtualControlButton(vBtn1, () => sendSelect(1));
+bindVirtualControlButton(vBtn2, () => sendSelect(2));
+bindVirtualControlButton(vBtn3, () => sendSelect(3));
+bindVirtualControlButton(vPauseBtn, () => {
+  void setMatchPaused(!isPausedState());
+});
+
 canvas.addEventListener("mousemove", (event) => {
-  if (!gameActive) {
+  if (!gameActive || isPausedState() || !isMouseInputMode()) {
     return;
   }
   pendingCursor = worldPosFromMouse(event);
 });
 
 canvas.addEventListener("click", (event) => {
-  if (!gameActive) {
+  if (!gameActive || isPausedState() || !isMouseInputMode()) {
     return;
   }
   const pos = worldPosFromMouse(event);
@@ -1145,6 +1763,31 @@ window.addEventListener("keydown", (event) => {
   }
 
   const key = event.key.toLowerCase();
+  if (key === "c") {
+    if (event.repeat) {
+      event.preventDefault();
+      return;
+    }
+    toggleCrowdMute();
+    event.preventDefault();
+    return;
+  }
+
+  if (event.key === "Enter") {
+    if (event.repeat) {
+      event.preventDefault();
+      return;
+    }
+    void setMatchPaused(!isPausedState());
+    event.preventDefault();
+    return;
+  }
+
+  if (isPausedState()) {
+    event.preventDefault();
+    return;
+  }
+
   if (key === "arrowup" || key === "w") {
     keyboardMove.up = true;
     event.preventDefault();
@@ -1171,11 +1814,7 @@ window.addEventListener("keydown", (event) => {
       event.preventDefault();
       return;
     }
-    const carrier = getMyBallCarrier();
-    if (carrier) {
-      const actionPoint = pendingCursor || { x: carrier.x, y: carrier.y };
-      sendAction(actionPoint.x, actionPoint.y);
-    }
+    sendCurrentDirectionalAction();
     event.preventDefault();
     return;
   }
@@ -1209,10 +1848,8 @@ window.addEventListener("keyup", (event) => {
 });
 
 window.addEventListener("blur", () => {
-  keyboardMove.up = false;
-  keyboardMove.down = false;
-  keyboardMove.left = false;
-  keyboardMove.right = false;
+  clearKeyboardMove();
+  resetVirtualStick();
 });
 
 window.addEventListener("pointerdown", () => {
@@ -1237,10 +1874,12 @@ setInterval(() => {
   const now = performance.now();
   const deltaMs = Math.max(0, now - lastInputTickAt);
   lastInputTickAt = now;
-  updateKeyboardCursor(deltaMs);
+  if (gameActive && !isPausedState()) {
+    updateKeyboardCursor(deltaMs);
+  }
   keepCrowdAlive();
 
-  if (!gameActive || !pendingCursor || !token) {
+  if (!gameActive || !pendingCursor || !token || isPausedState()) {
     return;
   }
 
@@ -1266,12 +1905,25 @@ playAgainBtn.addEventListener("click", async () => {
   state = null;
   pendingCursor = null;
   stopCrowdAudio();
+  hidePauseOverlay();
   hideResultOverlay();
   goalOverlayState.stage = null;
   hideGoalGif();
   showMenu();
   setMode(currentMatchMode === "online" ? "online" : "cpu");
 });
+
+if (pauseContinueBtn) {
+  pauseContinueBtn.addEventListener("click", () => {
+    void setMatchPaused(false);
+  });
+}
+
+if (pauseEndBtn) {
+  pauseEndBtn.addEventListener("click", () => {
+    void endMatchNow();
+  });
+}
 
 if (howToPlayBtn) {
   howToPlayBtn.addEventListener("click", () => {
@@ -1299,7 +1951,18 @@ if (howToPlayOverlay) {
   });
 }
 
+window.addEventListener("resize", () => {
+  syncVirtualControls();
+});
+
+window.addEventListener("orientationchange", () => {
+  window.setTimeout(() => {
+    syncVirtualControls();
+  }, 80);
+});
+
 populateCountries();
 setMode("cpu");
+setInputMode(inputModeInputs.find((input) => input.checked)?.value || "mouse");
 render();
 void preloadOnInitialLaunch();
