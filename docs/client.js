@@ -2,7 +2,7 @@ const FIELD_WIDTH = 1000;
 const FIELD_HEIGHT = 620;
 const GOAL_WIDTH = 220;
 const KEYBOARD_CURSOR_SPEED = 420;
-const STATE_POLL_MS = 55;
+const STATE_POLL_MS = 40;
 const REAL_MATCH_MS = 2 * 60 * 1000;
 const VIRTUAL_MATCH_SECONDS = 90 * 60;
 const REMOTE_API_BASE = "https://football-2kxo.onrender.com";
@@ -89,6 +89,7 @@ const preloadOverlay = document.getElementById("preloadOverlay");
 const preloadFlagA = document.getElementById("preloadFlagA");
 const preloadFlagB = document.getElementById("preloadFlagB");
 const preloadLoading = document.getElementById("preloadLoading");
+const preloadDots = document.getElementById("preloadDots");
 
 const canvas = document.getElementById("pitch");
 const ctx = canvas.getContext("2d");
@@ -139,12 +140,21 @@ const crowdAudio = new Audio("assets/crowd.mp3");
 crowdAudio.loop = true;
 crowdAudio.preload = "auto";
 crowdAudio.volume = 0.42;
-const goalAudioTemplate = new Audio("assets/goal.mp3");
-goalAudioTemplate.preload = "auto";
-goalAudioTemplate.volume = 0.88;
-const whistleAudioTemplate = new Audio("assets/whistle.mp3");
-whistleAudioTemplate.preload = "auto";
-whistleAudioTemplate.volume = 0.92;
+const SFX_POOL_SIZE = 6;
+
+function createSfxPool(src, volume) {
+  const pool = [];
+  for (let i = 0; i < SFX_POOL_SIZE; i += 1) {
+    const sfx = new Audio(src);
+    sfx.preload = "auto";
+    sfx.volume = volume;
+    pool.push(sfx);
+  }
+  return pool;
+}
+
+const goalSfxPool = createSfxPool("assets/goal.mp3", 0.88);
+const whistleSfxPool = createSfxPool("assets/whistle.mp3", 0.92);
 
 let token = null;
 let mode = "cpu";
@@ -168,7 +178,7 @@ let hasPlayedEndWarningWhistle = false;
 let onlineStartFlowInFlight = false;
 let onlineStartReadySent = false;
 let onlineStartRoomCode = "";
-const activeSfx = new Set();
+const sfxStopTimers = new WeakMap();
 const goalOverlayState = {
   stage: null
 };
@@ -260,22 +270,22 @@ function randomCpuCountry() {
 }
 
 function showPreloadOverlay(countryA, countryB) {
-  if (!preloadOverlay || !preloadFlagA || !preloadFlagB || !preloadLoading) {
+  if (!preloadOverlay || !preloadFlagA || !preloadFlagB || !preloadLoading || !preloadDots) {
     return;
   }
 
   preloadFlagA.textContent = extractFlag(countryA);
   preloadFlagB.textContent = extractFlag(countryB);
-  preloadDotCount = 0;
-  preloadLoading.textContent = "LOADING";
+  preloadDotCount = 1;
+  preloadDots.textContent = ".";
   preloadOverlay.classList.remove("hidden");
 
   if (preloadDotsTimer) {
     clearInterval(preloadDotsTimer);
   }
   preloadDotsTimer = setInterval(() => {
-    preloadDotCount = (preloadDotCount + 1) % 4;
-    preloadLoading.textContent = `LOADING${".".repeat(preloadDotCount)}`;
+    preloadDotCount = (preloadDotCount % 3) + 1;
+    preloadDots.textContent = ".".repeat(preloadDotCount);
   }, 260);
 }
 
@@ -284,12 +294,31 @@ function hidePreloadOverlay() {
     clearInterval(preloadDotsTimer);
     preloadDotsTimer = null;
   }
-  if (preloadLoading) {
-    preloadLoading.textContent = "LOADING";
+  if (preloadDots) {
+    preloadDots.textContent = "...";
   }
   if (preloadOverlay) {
     preloadOverlay.classList.add("hidden");
   }
+}
+
+function preloadSingleAsset(url) {
+  const lower = String(url).toLowerCase();
+  if (lower.endsWith(".gif")) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error(`Failed to load asset: ${url}`));
+      img.src = url;
+    });
+  }
+
+  return fetch(url, { cache: "force-cache" }).then((response) => {
+    if (!response.ok) {
+      throw new Error(`Failed to load asset: ${url}`);
+    }
+    return response.arrayBuffer();
+  });
 }
 
 async function ensureAssetsPreloaded(preview = null) {
@@ -312,11 +341,7 @@ async function ensureAssetsPreloaded(preview = null) {
 
     assetsPreloadPromise = Promise.all(
       REQUIRED_ASSETS.map(async (url) => {
-        const response = await fetch(url, { cache: "force-cache" });
-        if (!response.ok) {
-          throw new Error(`Failed to load asset: ${url}`);
-        }
-        await response.arrayBuffer();
+        await preloadSingleAsset(url);
         loaded += 1;
         setStatus(`Loading assets ${loaded}/${total}...`);
       })
@@ -333,6 +358,23 @@ async function ensureAssetsPreloaded(preview = null) {
   } finally {
     hidePreloadOverlay();
   }
+}
+
+async function preloadOnInitialLaunch() {
+  menu.classList.add("hidden");
+  hud.classList.add("hidden");
+
+  try {
+    await ensureAssetsPreloaded({
+      leftCountry: countrySelect.value || "Unknown",
+      rightCountry: randomCpuCountry()
+    });
+  } catch (err) {
+    setStatus(err.message || "Failed to preload assets.", true);
+  }
+
+  showMenu();
+  setMode("cpu");
 }
 
 function syncCrowdAudio() {
@@ -377,30 +419,42 @@ function playSfxParallel(templateAudio, maxDurationMs = 0) {
   if (!hasUserInteracted) {
     return null;
   }
-  const sfx = templateAudio.cloneNode();
-  sfx.volume = templateAudio.volume;
-  activeSfx.add(sfx);
 
-  const cleanup = () => {
-    activeSfx.delete(sfx);
-  };
+  const pool = templateAudio;
+  if (!Array.isArray(pool) || pool.length === 0) {
+    return null;
+  }
 
-  sfx.addEventListener("ended", cleanup, { once: true });
-  sfx.addEventListener("error", cleanup, { once: true });
+  let sfx = pool.find((audio) => audio.paused || audio.ended);
+  if (!sfx) {
+    sfx = pool[0];
+  }
+
+  const previousTimer = sfxStopTimers.get(sfx);
+  if (previousTimer) {
+    clearTimeout(previousTimer);
+    sfxStopTimers.delete(sfx);
+  }
+
+  try {
+    sfx.pause();
+    sfx.currentTime = 0;
+  } catch (err) {
+    // Ignore media reset errors and still attempt play.
+  }
 
   const playAttempt = sfx.play();
   if (playAttempt && typeof playAttempt.catch === "function") {
-    playAttempt.catch(() => {
-      cleanup();
-    });
+    playAttempt.catch(() => {});
   }
 
   if (maxDurationMs > 0) {
-    window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       sfx.pause();
       sfx.currentTime = 0;
-      cleanup();
+      sfxStopTimers.delete(sfx);
     }, maxDurationMs);
+    sfxStopTimers.set(sfx, timer);
   }
 
   return sfx;
@@ -408,14 +462,14 @@ function playSfxParallel(templateAudio, maxDurationMs = 0) {
 
 function playGoalAudio() {
   keepCrowdAlive();
-  playSfxParallel(goalAudioTemplate);
+  playSfxParallel(goalSfxPool);
   window.setTimeout(keepCrowdAlive, 40);
   window.setTimeout(keepCrowdAlive, 240);
 }
 
 function playWhistleAudio() {
   keepCrowdAlive();
-  playSfxParallel(whistleAudioTemplate, 2000);
+  playSfxParallel(whistleSfxPool, 2000);
   window.setTimeout(keepCrowdAlive, 40);
   window.setTimeout(keepCrowdAlive, 240);
 }
@@ -1204,5 +1258,5 @@ playAgainBtn.addEventListener("click", async () => {
 
 populateCountries();
 setMode("cpu");
-showMenu();
 render();
+void preloadOnInitialLaunch();

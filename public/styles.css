@@ -216,7 +216,8 @@ body {
   position: absolute;
   inset: 0;
   z-index: 7;
-  background: rgba(1, 12, 4, 0.78);
+  background:
+    repeating-linear-gradient(90deg, #2f9650 0 100px, #2b8f4c 100px 200px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -248,10 +249,23 @@ body {
   right: 20px;
   bottom: 16px;
   color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   font-size: 38px;
   font-weight: 800;
   letter-spacing: 1px;
   text-shadow: 0 3px 8px rgba(0, 0, 0, 0.6);
+}
+
+.preload-loading-word {
+  display: inline-block;
+}
+
+.preload-loading-dots {
+  display: inline-block;
+  width: 3ch;
+  text-align: left;
 }
 
 .goal-gif-overlay img {
