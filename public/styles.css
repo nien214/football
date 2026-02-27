@@ -14,6 +14,11 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+*::selection {
+  background: transparent;
+  color: inherit;
+}
+
 html,
 body {
   width: 100%;
@@ -339,6 +344,13 @@ body {
 }
 
 .preload-title {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  text-align: center;
+  pointer-events: none;
   color: #fff8ce;
   font-size: 92px;
   font-weight: 800;
@@ -505,8 +517,8 @@ body {
 
 .vstick-base {
   position: relative;
-  width: 174px;
-  height: 174px;
+  width: 198px;
+  height: 198px;
   border-radius: 50%;
   background: radial-gradient(circle at 32% 30%, #f3f2d6, #d5d3b5 70%);
   border: 2px solid rgba(35, 58, 38, 0.75);
@@ -518,8 +530,8 @@ body {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 84px;
-  height: 84px;
+  width: 92px;
+  height: 92px;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #ffffff, #dadfd9 72%);
   border: 2px solid rgba(22, 39, 26, 0.8);
@@ -699,13 +711,13 @@ body {
   }
 
   .app.vstick-active .vstick-base {
-    width: clamp(156px, 42vw, 208px);
-    height: clamp(156px, 42vw, 208px);
+    width: clamp(186px, 46vw, 236px);
+    height: clamp(186px, 46vw, 236px);
   }
 
   .app.vstick-active .vstick-knob {
-    width: clamp(74px, 19vw, 98px);
-    height: clamp(74px, 19vw, 98px);
+    width: clamp(84px, 21vw, 106px);
+    height: clamp(84px, 21vw, 106px);
   }
 
   .app.vstick-active .v-number-btn {
@@ -724,5 +736,80 @@ body {
     min-width: clamp(176px, 44vw, 244px);
     height: clamp(60px, 14vw, 84px);
     font-size: clamp(22px, 5vw, 28px);
+  }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .app.vstick-active .virtual-controls {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    padding: 0;
+    pointer-events: none;
+    z-index: 11;
+  }
+
+  .app.vstick-active .v-main-row {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: none;
+    padding: 0 16px;
+    pointer-events: none;
+  }
+
+  .app.vstick-active .v-stick-side,
+  .app.vstick-active .v-action-side,
+  .app.vstick-active .v-bottom-row {
+    pointer-events: auto;
+  }
+
+  .app.vstick-active .v-stick-side {
+    width: 34vw;
+    justify-content: flex-start;
+  }
+
+  .app.vstick-active .v-action-side {
+    width: 34vw;
+    align-items: flex-end;
+  }
+
+  .app.vstick-active .vstick-base {
+    width: clamp(156px, 20vw, 210px);
+    height: clamp(156px, 20vw, 210px);
+  }
+
+  .app.vstick-active .vstick-knob {
+    width: clamp(74px, 10vw, 102px);
+    height: clamp(74px, 10vw, 102px);
+  }
+
+  .app.vstick-active .v-number-btn {
+    width: clamp(52px, 7vw, 72px);
+    height: clamp(52px, 7vw, 72px);
+    font-size: clamp(22px, 3.5vw, 30px);
+  }
+
+  .app.vstick-active .v-action-btn {
+    width: clamp(132px, 16vw, 172px);
+    height: clamp(132px, 16vw, 172px);
+    font-size: clamp(22px, 3.2vw, 28px);
+  }
+
+  .app.vstick-active .v-bottom-row {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    display: flex;
+    justify-content: center;
+    width: 100%;
   }
 }

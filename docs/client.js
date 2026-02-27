@@ -5,7 +5,9 @@ const GOAL_LINE_INSET = 80;
 const GOAL_NET_DEPTH = 170;
 const GOAL_BOX_DEPTH = 115;
 const KEYBOARD_CURSOR_SPEED = 420;
-const VSTICK_CURSOR_SPEED = 440;
+const VSTICK_CURSOR_SPEED = 620;
+const VSTICK_SENSITIVITY = 1.35;
+const VSTICK_RESPONSE_EXP = 0.75;
 const STATE_POLL_MS = 40;
 const REAL_MATCH_MS = 2 * 60 * 1000;
 const VIRTUAL_MATCH_SECONDS = 90 * 60;
@@ -288,7 +290,7 @@ function isLikelyMobileBrowser() {
 }
 
 function shouldShowVirtualControls() {
-  return gameActive && isVStickInputMode() && isPortraitViewport();
+  return gameActive && isVStickInputMode() && isLikelyMobileBrowser();
 }
 
 function updateFieldLayout() {
@@ -298,7 +300,7 @@ function updateFieldLayout() {
   const controlsVisible = shouldShowVirtualControls();
   let reservedHeight = portrait ? 148 : 86;
   if (controlsVisible) {
-    reservedHeight += portrait ? 330 : 220;
+    reservedHeight += portrait ? 330 : 110;
   }
   const maxByHeight = ((viewportH - reservedHeight) * FIELD_WIDTH) / FIELD_HEIGHT;
   const maxByWidth = viewportW - (portrait ? 16 : 20);
@@ -1091,10 +1093,13 @@ function getMyBallCarrier() {
   return state.players.find((player) => player.team === myTeam && player.hasBall) || null;
 }
 
-function isTypingTarget(event) {
-  const target = event.target;
+function isTextInputElement(target) {
   const tagName = target && target.tagName ? target.tagName.toLowerCase() : "";
   return tagName === "input" || tagName === "textarea" || tagName === "select";
+}
+
+function isTypingTarget(event) {
+  return isTextInputElement(event && event.target);
 }
 
 function updateKeyboardCursor(deltaMs) {
@@ -1149,7 +1154,7 @@ function updateVirtualStickFromPointer(event) {
   const rect = vstickBase.getBoundingClientRect();
   const centerX = rect.left + rect.width / 2;
   const centerY = rect.top + rect.height / 2;
-  const maxRadius = Math.max(20, rect.width * 0.32);
+  const maxRadius = Math.max(20, rect.width * 0.26);
   let dx = event.clientX - centerX;
   let dy = event.clientY - centerY;
   const distance = Math.hypot(dx, dy);
@@ -1159,8 +1164,16 @@ function updateVirtualStickFromPointer(event) {
     dy *= scale;
   }
 
-  virtualStick.x = clamp(dx / maxRadius, -1, 1);
-  virtualStick.y = clamp(dy / maxRadius, -1, 1);
+  const dirX = distance > 0.001 ? dx / distance : 0;
+  const dirY = distance > 0.001 ? dy / distance : 0;
+  const normalizedDistance = clamp(distance / maxRadius, 0, 1);
+  const boostedMagnitude = clamp(
+    Math.pow(normalizedDistance, VSTICK_RESPONSE_EXP) * VSTICK_SENSITIVITY,
+    0,
+    1
+  );
+  virtualStick.x = clamp(dirX * boostedMagnitude, -1, 1);
+  virtualStick.y = clamp(dirY * boostedMagnitude, -1, 1);
   if (vstickKnob) {
     vstickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
   }
@@ -1970,6 +1983,74 @@ window.addEventListener("orientationchange", () => {
     syncVirtualControls();
   }, 80);
 });
+
+document.addEventListener("contextmenu", (event) => {
+  if (isTextInputElement(event.target)) {
+    return;
+  }
+  event.preventDefault();
+});
+
+document.addEventListener("selectstart", (event) => {
+  if (isTextInputElement(event.target)) {
+    return;
+  }
+  event.preventDefault();
+});
+
+document.addEventListener("dragstart", (event) => {
+  if (isTextInputElement(event.target)) {
+    return;
+  }
+  event.preventDefault();
+});
+
+window.addEventListener(
+  "gesturestart",
+  (event) => {
+    event.preventDefault();
+  },
+  { passive: false }
+);
+
+window.addEventListener(
+  "gesturechange",
+  (event) => {
+    event.preventDefault();
+  },
+  { passive: false }
+);
+
+window.addEventListener(
+  "gestureend",
+  (event) => {
+    event.preventDefault();
+  },
+  { passive: false }
+);
+
+window.addEventListener(
+  "touchmove",
+  (event) => {
+    if (event.touches && event.touches.length > 1) {
+      event.preventDefault();
+    }
+  },
+  { passive: false }
+);
+
+let lastTouchEndAt = 0;
+window.addEventListener(
+  "touchend",
+  (event) => {
+    const now = Date.now();
+    if (now - lastTouchEndAt < 320) {
+      event.preventDefault();
+    }
+    lastTouchEndAt = now;
+  },
+  { passive: false }
+);
 
 populateCountries();
 setMode("cpu");

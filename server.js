@@ -2102,5 +2102,5 @@ setInterval(() => {
 
 server.listen(PORT, () => {
   // eslint-disable-next-line no-console
-  console.log(`Mouse Soccer running at http://localhost:${PORT}`);
+  console.log(`FIFA27 running at http://localhost:${PORT}`);
 });
