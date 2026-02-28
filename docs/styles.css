@@ -103,9 +103,15 @@ body {
 
 .field {
   display: grid;
-  gap: 4px;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 10px;
   font-size: 14px;
+}
+
+.field span {
+  font-weight: 700;
 }
 
 .field input,
@@ -181,6 +187,20 @@ body {
 .controls {
   display: grid;
   gap: 8px;
+}
+
+.server-conn-status {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.server-conn-status[data-state="connecting"] {
+  color: #d67212;
+}
+
+.server-conn-status[data-state="connected"] {
+  color: #1f7a45;
 }
 
 .difficulty-group {
@@ -292,6 +312,13 @@ body {
   margin: 6px 0 0;
   font-size: 13px;
   color: #334f35;
+}
+
+.menu-credit {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: #4d6a4f;
 }
 
 .hud {

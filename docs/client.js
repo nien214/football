@@ -13,6 +13,7 @@ const DIRECT_CONTROL_LOOKAHEAD = 150;
 const DIRECT_ACTION_DISTANCE = 220;
 const VSTICK_SENSITIVITY = 1.35;
 const VSTICK_RESPONSE_EXP = 0.75;
+const SERVER_CONNECT_RETRY_MS = 1500;
 const STATE_POLL_MS = 40;
 const REAL_MATCH_MS = 2 * 60 * 1000;
 const VIRTUAL_MATCH_SECONDS = 90 * 60;
@@ -93,6 +94,7 @@ const inputModeInputs = Array.from(document.querySelectorAll("input[name='inputM
 const cpuControls = document.getElementById("cpuControls");
 const onlineControls = document.getElementById("onlineControls");
 const startCpuBtn = document.getElementById("startCpuBtn");
+const serverConnStatus = document.getElementById("serverConnStatus");
 const createBtn = document.getElementById("createBtn");
 const joinBtn = document.getElementById("joinBtn");
 const codeInput = document.getElementById("codeInput");
@@ -216,6 +218,10 @@ let hasPlayedEndWarningWhistle = false;
 let onlineStartFlowInFlight = false;
 let onlineStartReadySent = false;
 let onlineStartRoomCode = "";
+let serverConnected = false;
+let serverConnectRetryTimer = null;
+let serverConnectInFlight = false;
+let audioUnlocked = false;
 const sfxStopTimers = new WeakMap();
 const goalOverlayState = {
   stage: null
@@ -448,6 +454,61 @@ function setStatus(text, isError = false) {
   statusText.textContent = text;
   statusText.dataset.error = isError ? "1" : "0";
   lastStatus = text;
+}
+
+function setServerConnectionStatus(connected) {
+  if (!serverConnStatus) {
+    return;
+  }
+  serverConnStatus.dataset.state = connected ? "connected" : "connecting";
+  serverConnStatus.textContent = connected
+    ? "Connected to server."
+    : "Connecting to the server...";
+}
+
+function scheduleServerConnectionProbe(delayMs = 0) {
+  if (serverConnected || serverConnectRetryTimer !== null) {
+    return;
+  }
+  serverConnectRetryTimer = window.setTimeout(() => {
+    serverConnectRetryTimer = null;
+    void probeServerConnection();
+  }, Math.max(0, delayMs));
+}
+
+async function probeServerConnection() {
+  if (serverConnected || serverConnectInFlight) {
+    return;
+  }
+  serverConnectInFlight = true;
+  try {
+    const response = await fetch(apiUrl("/health"), {
+      method: "GET",
+      cache: "no-store"
+    });
+    if (!response.ok) {
+      throw new Error("Server unavailable");
+    }
+    const json = await response.json().catch(() => ({}));
+    if (json && json.ok === false) {
+      throw new Error("Server unavailable");
+    }
+    serverConnected = true;
+    setServerConnectionStatus(true);
+  } catch (err) {
+    setServerConnectionStatus(false);
+  } finally {
+    serverConnectInFlight = false;
+    if (!serverConnected) {
+      scheduleServerConnectionProbe(SERVER_CONNECT_RETRY_MS);
+    }
+  }
+}
+
+function startServerConnectionWatch() {
+  serverConnected = false;
+  setServerConnectionStatus(false);
+  scheduleServerConnectionProbe(0);
 }
 
 function apiUrl(path) {
@@ -802,6 +863,79 @@ function stopCrowdAudio() {
   syncCrowdAudio();
 }
 
+function unlockSingleAudio(audio) {
+  if (!audio) {
+    return;
+  }
+  const wasMuted = Boolean(audio.muted);
+  const wasVolume = Number.isFinite(audio.volume) ? audio.volume : 1;
+  try {
+    audio.muted = true;
+    audio.volume = 0;
+    audio.currentTime = 0;
+    const attempt = audio.play();
+    const finalize = () => {
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+      } catch (err) {
+        // Ignore media reset errors.
+      }
+      audio.muted = wasMuted;
+      audio.volume = wasVolume;
+    };
+    if (attempt && typeof attempt.then === "function") {
+      attempt.then(finalize).catch(finalize);
+    } else {
+      finalize();
+    }
+  } catch (err) {
+    audio.muted = wasMuted;
+    audio.volume = wasVolume;
+  }
+}
+
+function unlockAudioPlayback() {
+  if (audioUnlocked) {
+    return;
+  }
+  audioUnlocked = true;
+  const allAudio = [crowdAudio, ...goalSfxPool, ...whistleSfxPool];
+  const seen = new Set();
+  for (const audio of allAudio) {
+    if (!audio || seen.has(audio)) {
+      continue;
+    }
+    seen.add(audio);
+    unlockSingleAudio(audio);
+  }
+}
+
+function clearSfxStopTimer(sfx) {
+  const previousTimer = sfxStopTimers.get(sfx);
+  if (previousTimer) {
+    clearTimeout(previousTimer);
+    sfxStopTimers.delete(sfx);
+  }
+}
+
+function scheduleSfxStop(sfx, maxDurationMs) {
+  if (!(maxDurationMs > 0)) {
+    return;
+  }
+  clearSfxStopTimer(sfx);
+  const timer = window.setTimeout(() => {
+    try {
+      sfx.pause();
+      sfx.currentTime = 0;
+    } catch (err) {
+      // Ignore media reset errors.
+    }
+    sfxStopTimers.delete(sfx);
+  }, maxDurationMs);
+  sfxStopTimers.set(sfx, timer);
+}
+
 function toggleCrowdMute() {
   crowdMuted = !crowdMuted;
   if (crowdMuted) {
@@ -826,39 +960,53 @@ function playSfxParallel(templateAudio, maxDurationMs = 0) {
     return null;
   }
 
-  let sfx = pool.find((audio) => audio.paused || audio.ended);
-  if (!sfx) {
-    sfx = pool[0];
-  }
+  const preferred = pool.find((audio) => audio.paused || audio.ended) || pool[0];
+  const order = [preferred, ...pool.filter((audio) => audio !== preferred)];
+  const tried = new Set();
 
-  const previousTimer = sfxStopTimers.get(sfx);
-  if (previousTimer) {
-    clearTimeout(previousTimer);
-    sfxStopTimers.delete(sfx);
-  }
+  const tryPlay = (sfx) => {
+    if (!sfx || tried.has(sfx)) {
+      return;
+    }
+    tried.add(sfx);
+    clearSfxStopTimer(sfx);
 
-  try {
-    sfx.pause();
-    sfx.currentTime = 0;
-  } catch (err) {
-    // Ignore media reset errors and still attempt play.
-  }
-
-  const playAttempt = sfx.play();
-  if (playAttempt && typeof playAttempt.catch === "function") {
-    playAttempt.catch(() => {});
-  }
-
-  if (maxDurationMs > 0) {
-    const timer = window.setTimeout(() => {
+    try {
       sfx.pause();
       sfx.currentTime = 0;
-      sfxStopTimers.delete(sfx);
-    }, maxDurationMs);
-    sfxStopTimers.set(sfx, timer);
-  }
+    } catch (err) {
+      // Ignore media reset errors and still attempt play.
+    }
 
-  return sfx;
+    let playAttempt = null;
+    try {
+      playAttempt = sfx.play();
+    } catch (err) {
+      playAttempt = null;
+    }
+
+    const tryFallback = () => {
+      const next = order.find((candidate) => !tried.has(candidate));
+      if (next) {
+        tryPlay(next);
+      }
+    };
+
+    if (playAttempt && typeof playAttempt.then === "function") {
+      playAttempt
+        .then(() => {
+          scheduleSfxStop(sfx, maxDurationMs);
+        })
+        .catch(() => {
+          tryFallback();
+        });
+      return;
+    }
+
+    scheduleSfxStop(sfx, maxDurationMs);
+  }
+  tryPlay(preferred);
+  return preferred;
 }
 
 function stopSfxPoolNow(pool) {
@@ -866,11 +1014,7 @@ function stopSfxPoolNow(pool) {
     return;
   }
   for (const sfx of pool) {
-    const previousTimer = sfxStopTimers.get(sfx);
-    if (previousTimer) {
-      clearTimeout(previousTimer);
-      sfxStopTimers.delete(sfx);
-    }
+    clearSfxStopTimer(sfx);
     try {
       sfx.pause();
       sfx.currentTime = 0;
@@ -1983,6 +2127,7 @@ function bindVirtualControlButton(button, handler) {
       return;
     }
     hasUserInteracted = true;
+    unlockAudioPlayback();
     syncCrowdAudio();
     event.preventDefault();
     handler();
@@ -1995,6 +2140,7 @@ if (vstickBase) {
       return;
     }
     hasUserInteracted = true;
+    unlockAudioPlayback();
     syncCrowdAudio();
     virtualStick.pointerId = event.pointerId;
     vstickBase.setPointerCapture(event.pointerId);
@@ -2147,11 +2293,13 @@ window.addEventListener("blur", () => {
 
 window.addEventListener("pointerdown", () => {
   hasUserInteracted = true;
+  unlockAudioPlayback();
   syncCrowdAudio();
 });
 
 window.addEventListener("keydown", () => {
   hasUserInteracted = true;
+  unlockAudioPlayback();
   syncCrowdAudio();
 });
 
@@ -2329,4 +2477,5 @@ const initialInputMode = isLikelyMobileBrowser()
   : inputModeInputs.find((input) => input.checked)?.value || "mouse";
 setInputMode(initialInputMode);
 render();
+startServerConnectionWatch();
 void preloadOnInitialLaunch();
