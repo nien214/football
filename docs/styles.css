@@ -545,12 +545,12 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 20px;
 }
 
 .v-number-row {
   display: flex;
-  gap: 8px;
+  gap: 14px;
 }
 
 .v-number-btn {
@@ -770,14 +770,15 @@ body {
     position: absolute;
     left: 0;
     right: 0;
-    top: 50%;
-    transform: translateY(-50%);
+    top: 0;
+    bottom: 0;
+    transform: none;
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: stretch;
     width: 100%;
     max-width: none;
-    padding: 0 2px;
+    padding: clamp(10px, 2vh, 20px) 4px calc(90px + env(safe-area-inset-bottom));
     pointer-events: none;
   }
 
@@ -789,34 +790,43 @@ body {
 
   .app.vstick-active .v-stick-side {
     width: var(--landscape-side-space);
+    align-items: center;
     justify-content: center;
   }
 
   .app.vstick-active .v-action-side {
     width: var(--landscape-side-space);
     align-items: center;
+    justify-content: space-between;
+    padding: clamp(4px, 1vh, 12px) 0;
   }
 
   .app.vstick-active .vstick-base {
-    width: min(174px, calc(var(--landscape-side-space) - 12px));
-    height: min(174px, calc(var(--landscape-side-space) - 12px));
+    width: clamp(156px, calc(var(--landscape-side-space) - 8px), 236px);
+    height: clamp(156px, calc(var(--landscape-side-space) - 8px), 236px);
   }
 
   .app.vstick-active .vstick-knob {
-    width: min(86px, calc(var(--landscape-side-space) * 0.5));
-    height: min(86px, calc(var(--landscape-side-space) * 0.5));
+    width: clamp(74px, calc(var(--landscape-side-space) * 0.52), 122px);
+    height: clamp(74px, calc(var(--landscape-side-space) * 0.52), 122px);
+  }
+
+  .app.vstick-active .v-number-row {
+    width: 100%;
+    justify-content: center;
+    gap: clamp(10px, 1.8vw, 18px);
   }
 
   .app.vstick-active .v-number-btn {
-    width: clamp(34px, calc((var(--landscape-side-space) - 20px) / 3), 50px);
-    height: clamp(34px, calc((var(--landscape-side-space) - 20px) / 3), 50px);
-    font-size: clamp(18px, calc(var(--landscape-side-space) * 0.14), 24px);
+    width: clamp(46px, calc((var(--landscape-side-space) - 24px) / 3), 66px);
+    height: clamp(46px, calc((var(--landscape-side-space) - 24px) / 3), 66px);
+    font-size: clamp(22px, calc(var(--landscape-side-space) * 0.16), 30px);
   }
 
   .app.vstick-active .v-action-btn {
-    width: min(132px, calc(var(--landscape-side-space) - 22px));
-    height: min(132px, calc(var(--landscape-side-space) - 22px));
-    font-size: clamp(20px, calc(var(--landscape-side-space) * 0.14), 26px);
+    width: clamp(146px, calc(var(--landscape-side-space) - 14px), 208px);
+    height: clamp(146px, calc(var(--landscape-side-space) - 14px), 208px);
+    font-size: clamp(23px, calc(var(--landscape-side-space) * 0.16), 30px);
   }
 
   .app.vstick-active .v-bottom-row {

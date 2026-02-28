@@ -300,7 +300,7 @@ function updateFieldLayout() {
   const controlsVisible = shouldShowVirtualControls();
   const landscapeVStick = controlsVisible && !portrait;
   const sideSpace = landscapeVStick
-    ? Math.round(clamp(viewportW * 0.18, 132, 208))
+    ? Math.round(clamp(viewportW * 0.24, 140, 280))
     : 0;
   let reservedHeight = portrait ? 148 : 86;
   if (controlsVisible) {

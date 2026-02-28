@@ -26,6 +26,9 @@ const FIELD = {
 
 const GOAL_LINE_INSET = 80;
 const GOAL_NET_DEPTH = 170;
+const GOAL_LINE_SHOT_FALLOFF_START = 120;
+const GOAL_LINE_SHOT_FALLOFF_RANGE =
+  FIELD.width - GOAL_LINE_INSET * 2 - GOAL_LINE_SHOT_FALLOFF_START;
 
 const BALL_RADIUS = 7;
 const PLAYER_RADIUS = 19;
@@ -46,6 +49,15 @@ const CURVE_TURN_RATE_MAX = 0.34;
 const CURVE_MIN_FLIGHT_MS = 380;
 const CURVE_MAX_FLIGHT_MS = 1250;
 const FAR_SHOT_MAX_ANGLE_DEG = 10;
+const PLAYER_CHEMISTRY_BY_INDEX = Object.freeze([
+  // Footballer #1: Defender
+  { speedScale: 1.0, controlScale: 0.9, shotAccuracy: 0.7 },
+  // Footballer #2: Mid field
+  { speedScale: 0.9, controlScale: 0.9, shotAccuracy: 0.9 },
+  // Footballer #3: Striker
+  { speedScale: 0.8, controlScale: 0.8, shotAccuracy: 1.0 }
+]);
+const DEFAULT_PLAYER_CHEMISTRY = PLAYER_CHEMISTRY_BY_INDEX[1];
 
 const LEFT_FORMATION = [
   { x: 180, y: FIELD.height / 2, role: "F" },
@@ -196,12 +208,32 @@ function createCurveProfile(distance, speed, now) {
   return { turnRate, until: now + curveFlightMs };
 }
 
-function applyFarShotInaccuracy(dx, dy, distance) {
-  const ratio = getLongTravelRatio(distance);
+function getPlayerChemistry(player) {
+  const index = player && Number.isInteger(player.index) ? player.index : -1;
+  return PLAYER_CHEMISTRY_BY_INDEX[index] || DEFAULT_PLAYER_CHEMISTRY;
+}
+
+function getDistanceToAttackGoalLine(player) {
+  if (!player) {
+    return FIELD.width * 0.5;
+  }
+  const attackGoalLineX = player.team === 0 ? FIELD.width - GOAL_LINE_INSET : GOAL_LINE_INSET;
+  return Math.abs(attackGoalLineX - player.x);
+}
+
+function applyFarShotInaccuracy(dx, dy, player) {
+  const distanceToGoalLine = getDistanceToAttackGoalLine(player);
+  const ratio = clamp(
+    (distanceToGoalLine - GOAL_LINE_SHOT_FALLOFF_START) / GOAL_LINE_SHOT_FALLOFF_RANGE,
+    0,
+    1
+  );
   if (ratio <= 0) {
     return { dx, dy };
   }
-  const maxAngle = ((2 + FAR_SHOT_MAX_ANGLE_DEG * ratio) * Math.PI) / 180;
+  const chemistry = getPlayerChemistry(player);
+  const accuracyAmplifier = 1 / clamp(chemistry.shotAccuracy, 0.35, 1.2);
+  const maxAngle = ((1.5 + FAR_SHOT_MAX_ANGLE_DEG * ratio) * accuracyAmplifier * Math.PI) / 180;
   const angleOffset = (Math.random() * 2 - 1) * maxAngle;
   const rotated = rotateVector(dx, dy, angleOffset);
   return { dx: rotated.x, dy: rotated.y };
@@ -371,6 +403,26 @@ function getDefenderSpeedForTeam(room, team) {
   return DEFENDER_SPEED * profile.defenderSpeedScale;
 }
 
+function getPlayerOutfieldSpeed(room, player) {
+  if (!player) {
+    return OUTFIELD_SPEED;
+  }
+  if (isCpuTeam(room, player.team) && normalizeCpuDifficulty(room.cpuDifficulty) === "hard") {
+    return OUTFIELD_SPEED * 1.02;
+  }
+  return getOutfieldSpeedForTeam(room, player.team) * getPlayerChemistry(player).speedScale;
+}
+
+function getPlayerDefenderSpeed(room, player) {
+  if (!player) {
+    return DEFENDER_SPEED;
+  }
+  if (isCpuTeam(room, player.team) && normalizeCpuDifficulty(room.cpuDifficulty) === "hard") {
+    return DEFENDER_SPEED * 1.02;
+  }
+  return getDefenderSpeedForTeam(room, player.team) * getPlayerChemistry(player).speedScale;
+}
+
 function applyCarrySpeedRule(room, player, baseSpeed) {
   if (!player || !player.hasBall) {
     return baseSpeed;
@@ -457,7 +509,7 @@ function shootBall(room, from, targetX, targetY, now, speed = SHOT_SPEED) {
   const dx = targetX - from.x;
   const dy = targetY - from.y;
   const distance = Math.hypot(dx, dy) || 1;
-  const inaccurate = applyFarShotInaccuracy(dx, dy, distance);
+  const inaccurate = applyFarShotInaccuracy(dx, dy, from);
   const aimedDistance = Math.hypot(inaccurate.dx, inaccurate.dy) || 1;
   const curveProfile = createCurveProfile(distance, speed, now);
   releaseBall(
@@ -478,7 +530,7 @@ function resetForKickoff(room, kickoffTeam, now) {
     player.y = player.baseY;
     player.targetX = player.baseX;
     player.targetY = player.baseY;
-    player.moveSpeed = getDefenderSpeedForTeam(room, player.team);
+    player.moveSpeed = getPlayerDefenderSpeed(room, player);
     player.hasBall = false;
     player.kickLockUntil = 0;
     player.dirX = player.team === 0 ? 1 : -1;
@@ -956,7 +1008,7 @@ function runAiCarrierLogic(room, player, now) {
     FIELD.height - 40
   );
   const aiCarryBaseSpeed =
-    getOutfieldSpeedForTeam(room, team) * (cpuProfile ? cpuProfile.carrierSpeedScale : 1);
+    getPlayerOutfieldSpeed(room, player) * (cpuProfile ? cpuProfile.carrierSpeedScale : 1);
   player.moveSpeed = applyCarrySpeedRule(room, player, aiCarryBaseSpeed);
 }
 
@@ -968,8 +1020,8 @@ function setOutfieldTarget(room, player, context, now) {
   const cpuProfile = cpuTeam ? getCpuDifficultyProfile(room) : null;
   const cpuDifficulty = cpuTeam ? normalizeCpuDifficulty(room.cpuDifficulty) : "easy";
   const isSelected = human && input.selectedId === player.id;
-  const outfieldSpeed = getOutfieldSpeedForTeam(room, team);
-  const defenderSpeed = getDefenderSpeedForTeam(room, team);
+  const outfieldSpeed = getPlayerOutfieldSpeed(room, player);
+  const defenderSpeed = getPlayerDefenderSpeed(room, player);
 
   if (isSelected) {
     player.targetX = clamp(input.cursor.x, 0, FIELD.width);
@@ -1076,6 +1128,7 @@ function resolveTackles(room, now) {
         touchRadius += cpuProfile.tackleReachVsCpuDelta || 0;
       }
     }
+    touchRadius *= getPlayerChemistry(challenger).controlScale;
     touchRadius = Math.max(room.ball.radius + 2, touchRadius);
     const dBall = dist2(challenger.x, challenger.y, room.ball.x, room.ball.y);
     if (dBall <= touchRadius * touchRadius && dBall < bestDistance) {
@@ -1234,7 +1287,8 @@ function updateBallPhysics(room, dt, now) {
     if (now <= player.kickLockUntil) {
       continue;
     }
-    const pickupRadius = player.radius + room.ball.radius;
+    const pickupRadius =
+      (player.radius + room.ball.radius) * getPlayerChemistry(player).controlScale;
     const d = dist2(player.x, player.y, room.ball.x, room.ball.y);
     if (d <= pickupRadius * pickupRadius && d < bestDistance) {
       bestDistance = d;
@@ -1277,7 +1331,7 @@ function updateGoalCelebration(room, dt, now) {
 
     player.targetX = clamp(targetX, 24, FIELD.width - 24);
     player.targetY = clamp(targetY, 24, FIELD.height - 24);
-    player.moveSpeed = OUTFIELD_SPEED * 1.08;
+    player.moveSpeed = getPlayerOutfieldSpeed(room, player) * 1.08;
     movePlayer(player, dt);
   }
 }
