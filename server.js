@@ -1092,7 +1092,7 @@ function completeHalftimeBreak(room, now) {
   const nextKickoffTeam = room.halftimePause ? room.halftimePause.kickoffTeam : 0;
   room.halftimePause = null;
   room.sidesFlipped = !room.sidesFlipped;
-  resetForKickoff(room, nextKickoffTeam, now + 40, 0);
+  resetForKickoff(room, nextKickoffTeam, now + 40, KICKOFF_DELAY_MS);
 }
 
 function setOutfieldTarget(room, player, context, now) {
