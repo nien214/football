@@ -17,11 +17,13 @@ const POSSESSION_PROTECTION_MS = 1000;
 const GOAL_GIF_MS = 2600;
 const GOAL_SCORE_MS = 1650;
 const KICKOFF_DELAY_MS = 3000;
+const HALFTIME_BREAK_MS = 3000;
+const HALFTIME_CLOCK_MS = MATCH_TIME_MS / 2;
 
 const FIELD = {
   width: 1000,
   height: 620,
-  goalWidth: 190
+  goalWidth: 150
 };
 
 const GOAL_LINE_INSET = 80;
@@ -213,16 +215,16 @@ function getPlayerChemistry(player) {
   return PLAYER_CHEMISTRY_BY_INDEX[index] || DEFAULT_PLAYER_CHEMISTRY;
 }
 
-function getDistanceToAttackGoalLine(player) {
+function getDistanceToAttackGoalLine(room, player) {
   if (!player) {
     return FIELD.width * 0.5;
   }
-  const attackGoalLineX = player.team === 0 ? FIELD.width - GOAL_LINE_INSET : GOAL_LINE_INSET;
+  const attackGoalLineX = getAttackingGoalLineX(room, player.team);
   return Math.abs(attackGoalLineX - player.x);
 }
 
-function applyFarShotInaccuracy(dx, dy, player) {
-  const distanceToGoalLine = getDistanceToAttackGoalLine(player);
+function applyFarShotInaccuracy(room, dx, dy, player) {
+  const distanceToGoalLine = getDistanceToAttackGoalLine(room, player);
   const ratio = clamp(
     (distanceToGoalLine - GOAL_LINE_SHOT_FALLOFF_START) / GOAL_LINE_SHOT_FALLOFF_RANGE,
     0,
@@ -358,6 +360,10 @@ function createRoom(mode, code = null) {
     },
     score: [0, 0],
     timeLeftMs: MATCH_TIME_MS,
+    sidesFlipped: false,
+    openingKickoffTeam: 0,
+    halftimePlayed: false,
+    halftimePause: null,
     started: false,
     ready: [false, false],
     kickoffUntil: 0,
@@ -372,6 +378,31 @@ function createRoom(mode, code = null) {
 
   resetForKickoff(room, 0, Date.now());
   return room;
+}
+
+function isTeamOnLeftSide(room, team) {
+  if (room && room.sidesFlipped) {
+    return team === 1;
+  }
+  return team === 0;
+}
+
+function getTeamAttackDirection(room, team) {
+  return isTeamOnLeftSide(room, team) ? 1 : -1;
+}
+
+function getAttackingGoalLineX(room, team) {
+  return getTeamAttackDirection(room, team) > 0
+    ? FIELD.width - GOAL_LINE_INSET
+    : GOAL_LINE_INSET;
+}
+
+function getTeamScoringOnLeftGoal(room) {
+  return room && room.sidesFlipped ? 0 : 1;
+}
+
+function getTeamScoringOnRightGoal(room) {
+  return room && room.sidesFlipped ? 1 : 0;
 }
 
 function isHumanTeam(room, team) {
@@ -509,7 +540,7 @@ function shootBall(room, from, targetX, targetY, now, speed = SHOT_SPEED) {
   const dx = targetX - from.x;
   const dy = targetY - from.y;
   const distance = Math.hypot(dx, dy) || 1;
-  const inaccurate = applyFarShotInaccuracy(dx, dy, from);
+  const inaccurate = applyFarShotInaccuracy(room, dx, dy, from);
   const aimedDistance = Math.hypot(inaccurate.dx, inaccurate.dy) || 1;
   const curveProfile = createCurveProfile(distance, speed, now);
   releaseBall(
@@ -524,8 +555,12 @@ function shootBall(room, from, targetX, targetY, now, speed = SHOT_SPEED) {
   return true;
 }
 
-function resetForKickoff(room, kickoffTeam, now) {
+function resetForKickoff(room, kickoffTeam, now, kickoffDelayMs = KICKOFF_DELAY_MS) {
   for (const player of room.allPlayers) {
+    const slot = LEFT_FORMATION[player.index] || LEFT_FORMATION[0];
+    const onLeft = isTeamOnLeftSide(room, player.team);
+    player.baseX = onLeft ? slot.x : FIELD.width - slot.x;
+    player.baseY = slot.y;
     player.x = player.baseX;
     player.y = player.baseY;
     player.targetX = player.baseX;
@@ -533,7 +568,7 @@ function resetForKickoff(room, kickoffTeam, now) {
     player.moveSpeed = getPlayerDefenderSpeed(room, player);
     player.hasBall = false;
     player.kickLockUntil = 0;
-    player.dirX = player.team === 0 ? 1 : -1;
+    player.dirX = getTeamAttackDirection(room, player.team);
     player.dirY = 0;
   }
 
@@ -555,32 +590,34 @@ function resetForKickoff(room, kickoffTeam, now) {
     return;
   }
 
-  kickoffPlayer.x = FIELD.width / 2 + (kickoffTeam === 0 ? -28 : 28);
+  const kickoffDirection = getTeamAttackDirection(room, kickoffTeam);
+  kickoffPlayer.x = FIELD.width / 2 - kickoffDirection * 28;
   kickoffPlayer.y = centerY;
   kickoffPlayer.targetX = kickoffPlayer.x;
   kickoffPlayer.targetY = kickoffPlayer.y;
-  kickoffPlayer.dirX = kickoffTeam === 0 ? 1 : -1;
+  kickoffPlayer.dirX = kickoffDirection;
   kickoffPlayer.dirY = 0;
 
-  support.x = FIELD.width / 2 + (kickoffTeam === 0 ? -85 : 85);
+  support.x = FIELD.width / 2 - kickoffDirection * 85;
   support.y = centerY + 52;
   support.targetX = support.x;
   support.targetY = support.y;
 
-  opponent.x = FIELD.width / 2 + (kickoffTeam === 0 ? 85 : -85);
+  opponent.x = FIELD.width / 2 + kickoffDirection * 85;
   opponent.y = centerY;
   opponent.targetX = opponent.x;
   opponent.targetY = opponent.y;
 
   setBallOwner(room, kickoffPlayer, now);
-  room.ball.x = kickoffPlayer.x;
-  room.ball.y = kickoffPlayer.y;
+  const kickoffBallOffset = kickoffPlayer.radius + room.ball.radius + 1;
+  room.ball.x = kickoffPlayer.x + kickoffPlayer.dirX * kickoffBallOffset;
+  room.ball.y = kickoffPlayer.y + kickoffPlayer.dirY * kickoffBallOffset;
   room.ball.vx = 0;
   room.ball.vy = 0;
   room.ball.curveTurnRate = 0;
   room.ball.curveUntil = 0;
   room.ball.lockUntil = now + 180;
-  room.kickoffUntil = now + KICKOFF_DELAY_MS;
+  room.kickoffUntil = now + Math.max(0, kickoffDelayMs);
 }
 
 function scoreGoal(room, scoringTeam, now) {
@@ -669,7 +706,7 @@ function getNearestOpponentDistance(room, player) {
 }
 
 function getBestForwardTarget(room, team, from) {
-  const direction = team === 0 ? 1 : -1;
+  const direction = getTeamAttackDirection(room, team);
   let best = null;
   let bestScore = -Infinity;
 
@@ -694,7 +731,7 @@ function getBestForwardTarget(room, team, from) {
 
 function getBestHardPassOption(room, from) {
   const team = from.team;
-  const direction = team === 0 ? 1 : -1;
+  const direction = getTeamAttackDirection(room, team);
   let best = null;
   let bestScore = -Infinity;
 
@@ -905,7 +942,7 @@ function runAiCarrierLogic(room, player, now) {
   const cpuTeam = isCpuTeam(room, team);
   const cpuProfile = cpuTeam ? getCpuDifficultyProfile(room) : null;
   const cpuDifficulty = cpuTeam ? normalizeCpuDifficulty(room.cpuDifficulty) : "easy";
-  const attackGoalX = team === 0 ? FIELD.width + 30 : -30;
+  const attackGoalX = getTeamAttackDirection(room, team) > 0 ? FIELD.width + 30 : -30;
   const attackGoalY = FIELD.height / 2;
   const distanceToGoal = Math.hypot(attackGoalX - player.x, attackGoalY - player.y);
   const shotDistance = cpuProfile ? cpuProfile.shotDistance : 210;
@@ -973,7 +1010,7 @@ function runAiCarrierLogic(room, player, now) {
         if (pressure < 62) {
           const forward = getBestForwardTarget(room, team, player);
           if (forward) {
-            const direction = team === 0 ? 1 : -1;
+            const direction = getTeamAttackDirection(room, team);
             const progress = (forward.x - player.x) * direction;
             if (progress > 4 && passBall(room, player, forward, now, PASS_SPEED * 1.14)) {
               room.nextAiDecisionAt[team] = now + 320;
@@ -995,7 +1032,7 @@ function runAiCarrierLogic(room, player, now) {
     }
   }
 
-  const direction = team === 0 ? 1 : -1;
+  const direction = getTeamAttackDirection(room, team);
   const laneOffset = (player.baseY - attackGoalY) * 0.18;
   player.targetX = clamp(
     player.x + direction * (cpuProfile ? cpuProfile.carrierAdvance : 170),
@@ -1010,6 +1047,52 @@ function runAiCarrierLogic(room, player, now) {
   const aiCarryBaseSpeed =
     getPlayerOutfieldSpeed(room, player) * (cpuProfile ? cpuProfile.carrierSpeedScale : 1);
   player.moveSpeed = applyCarrySpeedRule(room, player, aiCarryBaseSpeed);
+}
+
+function isOnOpponentHalf(room, player) {
+  if (!player) {
+    return false;
+  }
+  const direction = getTeamAttackDirection(room, player.team);
+  return direction > 0 ? player.x > FIELD.width / 2 : player.x < FIELD.width / 2;
+}
+
+function getAssistPartnerIndex(playerIndex) {
+  if (playerIndex === 1) {
+    return 2;
+  }
+  if (playerIndex === 2) {
+    return 1;
+  }
+  return -1;
+}
+
+function startHalftimeBreak(room, now) {
+  room.timeLeftMs = HALFTIME_CLOCK_MS;
+  room.halftimePlayed = true;
+  room.halftimePause = {
+    stage: "halftime",
+    startedAt: now,
+    until: now + HALFTIME_BREAK_MS,
+    kickoffTeam: 1 - room.openingKickoffTeam
+  };
+  room.kickoffUntil = 0;
+  room.ball.lockUntil = now + HALFTIME_BREAK_MS;
+  room.ball.stealLockUntil = now + HALFTIME_BREAK_MS;
+  room.inputs[0].clicks = [];
+  room.inputs[1].clicks = [];
+  for (const player of room.allPlayers) {
+    player.targetX = player.x;
+    player.targetY = player.y;
+    player.moveSpeed = 0;
+  }
+}
+
+function completeHalftimeBreak(room, now) {
+  const nextKickoffTeam = room.halftimePause ? room.halftimePause.kickoffTeam : 0;
+  room.halftimePause = null;
+  room.sidesFlipped = !room.sidesFlipped;
+  resetForKickoff(room, nextKickoffTeam, now + 40, 0);
 }
 
 function setOutfieldTarget(room, player, context, now) {
@@ -1036,12 +1119,38 @@ function setOutfieldTarget(room, player, context, now) {
   }
 
   if (
+    context.owner &&
+    context.owner.team === team &&
+    context.owner.role === "F" &&
+    player.role === "F" &&
+    !player.hasBall
+  ) {
+    const supportIndex = getAssistPartnerIndex(context.owner.index);
+    if (supportIndex === player.index && isOnOpponentHalf(room, context.owner)) {
+      const direction = getTeamAttackDirection(room, team);
+      const centerLine = FIELD.width / 2;
+      let tx = context.owner.x + direction * 54;
+      if (direction > 0) {
+        tx = Math.max(tx, centerLine + 34);
+      } else {
+        tx = Math.min(tx, centerLine - 34);
+      }
+      const laneOffset = player.baseY <= FIELD.height / 2 ? -72 : 72;
+      const ty = context.owner.y + laneOffset * 0.55;
+      player.targetX = clamp(tx, 70, FIELD.width - 70);
+      player.targetY = clamp(ty, 40, FIELD.height - 40);
+      player.moveSpeed = outfieldSpeed * 1.04;
+      return;
+    }
+  }
+
+  if (
     cpuTeam &&
     cpuDifficulty === "hard" &&
     context.owner &&
     context.owner.team === team
   ) {
-    const direction = team === 0 ? 1 : -1;
+    const direction = getTeamAttackDirection(room, team);
     const laneSign = player.baseY <= FIELD.height / 2 ? -1 : 1;
     const isPrimaryRunner = context.primaryRunnerId && context.primaryRunnerId === player.id;
     const advance = isPrimaryRunner ? 175 : 130;
@@ -1072,7 +1181,7 @@ function setOutfieldTarget(room, player, context, now) {
     return;
   }
 
-  const direction = team === 0 ? 1 : -1;
+  const direction = getTeamAttackDirection(room, team);
   let tx = player.baseX;
   if (context.possessionTeam === team) {
     tx += direction * (cpuProfile ? cpuProfile.possessionPush : 125);
@@ -1169,7 +1278,7 @@ function checkGoalScored(room, now) {
       goalTop + room.ball.radius + 2,
       goalBottom - room.ball.radius - 2
     );
-    scoreGoal(room, 1, now);
+    scoreGoal(room, getTeamScoringOnLeftGoal(room), now);
     return true;
   }
 
@@ -1184,7 +1293,7 @@ function checkGoalScored(room, now) {
       goalTop + room.ball.radius + 2,
       goalBottom - room.ball.radius - 2
     );
-    scoreGoal(room, 0, now);
+    scoreGoal(room, getTeamScoringOnRightGoal(room), now);
     return true;
   }
 
@@ -1198,7 +1307,7 @@ function updateBallPhysics(room, dt, now) {
     let facingY = owner.dirY;
     const facingLength = Math.hypot(facingX, facingY);
     if (facingLength < 0.001) {
-      facingX = owner.team === 0 ? 1 : -1;
+      facingX = getTeamAttackDirection(room, owner.team);
       facingY = 0;
     } else {
       facingX /= facingLength;
@@ -1347,6 +1456,15 @@ function updateRoom(room, dt, now) {
     return;
   }
 
+  if (room.halftimePause) {
+    room.inputs[0].clicks = [];
+    room.inputs[1].clicks = [];
+    if (now >= room.halftimePause.until) {
+      completeHalftimeBreak(room, now);
+    }
+    return;
+  }
+
   if (room.goalPause) {
     updateGoalCelebration(room, dt, now);
 
@@ -1370,6 +1488,10 @@ function updateRoom(room, dt, now) {
   room.kickoffUntil = 0;
 
   room.timeLeftMs = Math.max(0, room.timeLeftMs - dt * 1000);
+  if (!room.halftimePlayed && room.timeLeftMs <= HALFTIME_CLOCK_MS) {
+    startHalftimeBreak(room, now);
+    return;
+  }
 
   for (let team = 0; team < 2; team += 1) {
     const input = room.inputs[team];
@@ -1470,6 +1592,13 @@ function serializeState(room) {
                 anchorY: round1(room.goalPause.celebration.anchorY)
               }
             : null
+        }
+      : null,
+    halftimePause: room.halftimePause
+      ? {
+          stage: room.halftimePause.stage,
+          startedAt: room.halftimePause.startedAt,
+          until: room.halftimePause.until
         }
       : null,
     selected: [room.inputs[0].selectedId, room.inputs[1].selectedId],
@@ -1683,6 +1812,10 @@ async function handleApi(req, res, pathname, searchParams) {
     room.cpuDifficulty = cpuDifficulty;
     room.started = true;
     room.timeLeftMs = MATCH_TIME_MS;
+    room.sidesFlipped = false;
+    room.openingKickoffTeam = 0;
+    room.halftimePlayed = false;
+    room.halftimePause = null;
     room.paused = false;
     room.ended = false;
     room.endReason = null;
@@ -1720,6 +1853,10 @@ async function handleApi(req, res, pathname, searchParams) {
     room.started = false;
     room.ready = [false, false];
     room.timeLeftMs = MATCH_TIME_MS;
+    room.sidesFlipped = false;
+    room.openingKickoffTeam = 0;
+    room.halftimePlayed = false;
+    room.halftimePause = null;
     room.paused = false;
     room.ended = false;
     room.endReason = null;
@@ -1777,6 +1914,10 @@ async function handleApi(req, res, pathname, searchParams) {
     room.endReason = null;
     room.abandonedTeam = null;
     room.timeLeftMs = MATCH_TIME_MS;
+    room.sidesFlipped = false;
+    room.openingKickoffTeam = 0;
+    room.halftimePlayed = false;
+    room.halftimePause = null;
     room.paused = false;
 
     const token = createSession(room.id, 1);
@@ -1819,11 +1960,16 @@ async function handleApi(req, res, pathname, searchParams) {
 
     room.ready[session.team] = true;
     if (room.ready[0] && room.ready[1]) {
+      const openingKickoffTeam = Math.random() < 0.5 ? 0 : 1;
       room.started = true;
       room.timeLeftMs = MATCH_TIME_MS;
+      room.sidesFlipped = false;
+      room.openingKickoffTeam = openingKickoffTeam;
+      room.halftimePlayed = false;
+      room.halftimePause = null;
       room.paused = false;
       room.goalPause = null;
-      resetForKickoff(room, Math.random() < 0.5 ? 0 : 1, Date.now());
+      resetForKickoff(room, openingKickoffTeam, Date.now());
       sendJson(res, 200, { ok: true, status: "started" });
       return;
     }
@@ -1841,7 +1987,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
 
     const room = rooms.get(session.roomId);
-    if (!room || !room.started || room.ended || room.goalPause || room.paused) {
+    if (!room || !room.started || room.ended || room.goalPause || room.halftimePause || room.paused) {
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -1868,7 +2014,7 @@ async function handleApi(req, res, pathname, searchParams) {
       return;
     }
 
-    if (room.goalPause || room.paused) {
+    if (room.goalPause || room.halftimePause || room.paused) {
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -1893,7 +2039,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
 
     const room = rooms.get(session.roomId);
-    if (!room || !room.started || room.ended || room.goalPause || room.paused) {
+    if (!room || !room.started || room.ended || room.goalPause || room.halftimePause || room.paused) {
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -1931,7 +2077,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
 
     const room = rooms.get(session.roomId);
-    if (!room || !room.started || room.ended || room.goalPause || room.paused) {
+    if (!room || !room.started || room.ended || room.goalPause || room.halftimePause || room.paused) {
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -1957,7 +2103,7 @@ async function handleApi(req, res, pathname, searchParams) {
     }
 
     const room = rooms.get(session.roomId);
-    if (!room || !room.started || room.ended || room.goalPause || room.paused) {
+    if (!room || !room.started || room.ended || room.goalPause || room.halftimePause || room.paused) {
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -2009,6 +2155,7 @@ async function handleApi(req, res, pathname, searchParams) {
 
     room.paused = false;
     room.goalPause = null;
+    room.halftimePause = null;
     room.ended = true;
     room.endReason = "ended";
     room.endedAt = Date.now();

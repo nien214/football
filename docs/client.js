@@ -1,11 +1,16 @@
 const FIELD_WIDTH = 1000;
 const FIELD_HEIGHT = 620;
-const GOAL_WIDTH = 190;
+const GOAL_WIDTH = 150;
 const GOAL_LINE_INSET = 80;
 const GOAL_NET_DEPTH = 170;
-const GOAL_BOX_DEPTH = 115;
-const KEYBOARD_CURSOR_SPEED = 420;
-const VSTICK_CURSOR_SPEED = 620;
+const GOAL_BOX_DEPTH = 150;
+const GOAL_BOX_HEIGHT = 240;
+const BALL_RADIUS = 7;
+const BALL_MAX_TELEPORT_DISTANCE = 120;
+const BALL_SPIN_DAMPING = 0.92;
+const BALL_MIN_SPIN_SPEED = 0.12;
+const DIRECT_CONTROL_LOOKAHEAD = 150;
+const DIRECT_ACTION_DISTANCE = 220;
 const VSTICK_SENSITIVITY = 1.35;
 const VSTICK_RESPONSE_EXP = 0.75;
 const STATE_POLL_MS = 40;
@@ -215,6 +220,9 @@ const sfxStopTimers = new WeakMap();
 const goalOverlayState = {
   stage: null
 };
+const halftimeOverlayState = {
+  active: false
+};
 let lastGoalGifSrc = "";
 const keyboardMove = {
   up: false,
@@ -228,9 +236,200 @@ const virtualStick = {
   y: 0
 };
 const playerAnimCache = new Map();
+const ballAnim = {
+  sampleX: null,
+  sampleY: null,
+  sampleAt: 0,
+  lastFrameAt: 0,
+  heading: 0,
+  rollAngle: 0,
+  spinSpeed: 0
+};
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function resetBallAnimation(nowMs = performance.now()) {
+  ballAnim.sampleX = null;
+  ballAnim.sampleY = null;
+  ballAnim.sampleAt = nowMs;
+  ballAnim.lastFrameAt = nowMs;
+  ballAnim.heading = 0;
+  ballAnim.rollAngle = 0;
+  ballAnim.spinSpeed = 0;
+}
+
+function updateBallAnimation(ball, nowMs) {
+  if (!ball || !Number.isFinite(ball.x) || !Number.isFinite(ball.y)) {
+    resetBallAnimation(nowMs);
+    return;
+  }
+
+  if (!Number.isFinite(ballAnim.sampleX) || !Number.isFinite(ballAnim.sampleY)) {
+    ballAnim.sampleX = ball.x;
+    ballAnim.sampleY = ball.y;
+    ballAnim.sampleAt = nowMs;
+    ballAnim.lastFrameAt = nowMs;
+    return;
+  }
+
+  const frameDt = clamp((nowMs - ballAnim.lastFrameAt) / 1000, 1 / 240, 0.12);
+  ballAnim.lastFrameAt = nowMs;
+
+  const dx = ball.x - ballAnim.sampleX;
+  const dy = ball.y - ballAnim.sampleY;
+  const distance = Math.hypot(dx, dy);
+
+  if (distance > 0.001) {
+    if (distance > BALL_MAX_TELEPORT_DISTANCE) {
+      ballAnim.sampleX = ball.x;
+      ballAnim.sampleY = ball.y;
+      ballAnim.sampleAt = nowMs;
+      ballAnim.spinSpeed = 0;
+      return;
+    }
+    const sampleDt = clamp((nowMs - ballAnim.sampleAt) / 1000, 1 / 120, 0.28);
+    const rollStep = distance / BALL_RADIUS;
+    ballAnim.heading = Math.atan2(dy, dx);
+    ballAnim.rollAngle = (ballAnim.rollAngle + rollStep) % (Math.PI * 2);
+    const measuredSpin = rollStep / sampleDt;
+    ballAnim.spinSpeed = ballAnim.spinSpeed * 0.48 + measuredSpin * 0.52;
+    ballAnim.sampleX = ball.x;
+    ballAnim.sampleY = ball.y;
+    ballAnim.sampleAt = nowMs;
+    return;
+  }
+
+  if (Math.abs(ballAnim.spinSpeed) > BALL_MIN_SPIN_SPEED) {
+    const damping = Math.pow(BALL_SPIN_DAMPING, frameDt * 60);
+    ballAnim.spinSpeed *= damping;
+    ballAnim.rollAngle = (ballAnim.rollAngle + ballAnim.spinSpeed * frameDt) % (Math.PI * 2);
+  } else {
+    ballAnim.spinSpeed = 0;
+  }
+}
+
+function drawPentagon(cx, cy, radius, rotation, fillStyle, strokeStyle, lineWidth) {
+  ctx.beginPath();
+  for (let i = 0; i < 5; i += 1) {
+    const angle = rotation + (i * Math.PI * 2) / 5;
+    const x = cx + Math.cos(angle) * radius;
+    const y = cy + Math.sin(angle) * radius;
+    if (i === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+  }
+  ctx.closePath();
+  ctx.fillStyle = fillStyle;
+  ctx.fill();
+  ctx.lineWidth = lineWidth;
+  ctx.strokeStyle = strokeStyle;
+  ctx.stroke();
+}
+
+function drawSoccerBall(ball, nowMs) {
+  updateBallAnimation(ball, nowMs);
+
+  const x = ball.x;
+  const y = ball.y;
+  const dirX = Math.cos(ballAnim.heading);
+  const dirY = Math.sin(ballAnim.heading);
+  const rollShift = Math.sin(ballAnim.rollAngle) * BALL_RADIUS * 0.34;
+  const textureShiftX = -dirX * rollShift;
+  const textureShiftY = -dirY * rollShift;
+
+  ctx.save();
+
+  ctx.fillStyle = "rgba(0,0,0,0.32)";
+  ctx.beginPath();
+  ctx.ellipse(
+    x + dirX * 0.8,
+    y + BALL_RADIUS * 0.95,
+    BALL_RADIUS * 0.95,
+    BALL_RADIUS * 0.42,
+    0,
+    0,
+    Math.PI * 2
+  );
+  ctx.fill();
+
+  ctx.translate(x, y);
+
+  const shellGradient = ctx.createRadialGradient(
+    -BALL_RADIUS * 0.3 + Math.cos(ballAnim.rollAngle * 0.5) * BALL_RADIUS * 0.08,
+    -BALL_RADIUS * 0.44 + Math.sin(ballAnim.rollAngle * 0.34) * BALL_RADIUS * 0.06,
+    BALL_RADIUS * 0.22,
+    0,
+    0,
+    BALL_RADIUS * 1.06
+  );
+  shellGradient.addColorStop(0, "#ffffff");
+  shellGradient.addColorStop(0.6, "#f2f2f2");
+  shellGradient.addColorStop(1, "#c8c8c8");
+
+  ctx.beginPath();
+  ctx.arc(0, 0, BALL_RADIUS, 0, Math.PI * 2);
+  ctx.fillStyle = shellGradient;
+  ctx.fill();
+  ctx.lineWidth = 0.1;
+  ctx.strokeStyle = "#111";
+  ctx.stroke();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, BALL_RADIUS - 0.35, 0, Math.PI * 2);
+  ctx.clip();
+
+  ctx.translate(textureShiftX, textureShiftY);
+  ctx.rotate(ballAnim.rollAngle * 0.38);
+
+  const panelFill = "#101010";
+  const panelStroke = "rgba(255,255,255,0.22)";
+  drawPentagon(
+    0,
+    0,
+    BALL_RADIUS * 0.31,
+    -Math.PI / 2 + ballAnim.rollAngle * 0.18,
+    panelFill,
+    panelStroke,
+    0.72
+  );
+
+  const ringRadius = BALL_RADIUS * 0.67;
+  for (let i = 0; i < 5; i += 1) {
+    const angle = -Math.PI / 2 + (i * Math.PI * 2) / 5 + ballAnim.rollAngle * 0.2;
+    const px = Math.cos(angle) * ringRadius;
+    const py = Math.sin(angle) * ringRadius;
+    drawPentagon(px, py, BALL_RADIUS * 0.21, angle + Math.PI / 5, panelFill, panelStroke, 0.6);
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(angle) * BALL_RADIUS * 0.24, Math.sin(angle) * BALL_RADIUS * 0.24);
+    ctx.lineTo(px * 0.78, py * 0.78);
+    ctx.lineWidth = 0.5;
+    ctx.strokeStyle = "rgba(17,17,17,0.28)";
+    ctx.stroke();
+  }
+
+  ctx.restore();
+
+  const gloss = ctx.createRadialGradient(
+    -BALL_RADIUS * 0.45,
+    -BALL_RADIUS * 0.52,
+    BALL_RADIUS * 0.05,
+    -BALL_RADIUS * 0.3,
+    -BALL_RADIUS * 0.36,
+    BALL_RADIUS * 0.9
+  );
+  gloss.addColorStop(0, "rgba(255,255,255,0.8)");
+  gloss.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = gloss;
+  ctx.beginPath();
+  ctx.arc(0, 0, BALL_RADIUS * 0.96, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
 }
 
 function extractFlag(countryText) {
@@ -762,6 +961,8 @@ function playGoalGif() {
 function showMenu() {
   menu.classList.remove("hidden");
   hud.classList.add("hidden");
+  goalOverlayState.stage = null;
+  halftimeOverlayState.active = false;
   hidePauseOverlay();
   hideResultOverlay();
   hideGoalGif();
@@ -1108,29 +1309,42 @@ function isTypingTarget(event) {
 }
 
 function updateKeyboardCursor(deltaMs) {
-  const keyboardDx = (keyboardMove.right ? 1 : 0) - (keyboardMove.left ? 1 : 0);
-  const keyboardDy = (keyboardMove.down ? 1 : 0) - (keyboardMove.up ? 1 : 0);
-  const stickDx = isVStickInputMode() ? virtualStick.x : 0;
-  const stickDy = isVStickInputMode() ? virtualStick.y : 0;
-  const dx = keyboardDx + stickDx;
-  const dy = keyboardDy + stickDy;
-  if (dx === 0 && dy === 0) {
+  if (isMouseInputMode()) {
     return;
   }
 
-  if (!pendingCursor) {
-    const selected = getSelectedPlayer();
-    pendingCursor = selected
-      ? { x: selected.x, y: selected.y }
-      : { x: FIELD_WIDTH / 2, y: FIELD_HEIGHT / 2 };
+  const selected = getSelectedPlayer();
+  if (!selected) {
+    if (!pendingCursor) {
+      pendingCursor = { x: FIELD_WIDTH / 2, y: FIELD_HEIGHT / 2 };
+    }
+    return;
   }
 
-  const distance = Math.hypot(dx, dy) || 1;
-  const normalized = clamp(distance, 0, 1);
-  const baseSpeed = isVStickInputMode() ? VSTICK_CURSOR_SPEED : KEYBOARD_CURSOR_SPEED;
-  const step = ((baseSpeed * deltaMs) / 1000) * normalized;
-  pendingCursor.x = clamp(pendingCursor.x + (dx / distance) * step, 0, FIELD_WIDTH);
-  pendingCursor.y = clamp(pendingCursor.y + (dy / distance) * step, 0, FIELD_HEIGHT);
+  let rawDx = 0;
+  let rawDy = 0;
+  if (inputMode === "keyboard") {
+    rawDx = (keyboardMove.right ? 1 : 0) - (keyboardMove.left ? 1 : 0);
+    rawDy = (keyboardMove.down ? 1 : 0) - (keyboardMove.up ? 1 : 0);
+  } else if (inputMode === "vstick") {
+    rawDx = virtualStick.x;
+    rawDy = virtualStick.y;
+  }
+
+  const magnitude = Math.hypot(rawDx, rawDy);
+  if (magnitude <= 0.001) {
+    pendingCursor = { x: selected.x, y: selected.y };
+    return;
+  }
+
+  const nx = rawDx / magnitude;
+  const ny = rawDy / magnitude;
+  const strength = clamp(magnitude, 0, 1);
+  const lookAhead = DIRECT_CONTROL_LOOKAHEAD * strength;
+  pendingCursor = {
+    x: clamp(selected.x + nx * lookAhead, 0, FIELD_WIDTH),
+    y: clamp(selected.y + ny * lookAhead, 0, FIELD_HEIGHT)
+  };
 }
 
 function worldPosFromMouse(event) {
@@ -1148,7 +1362,43 @@ function sendCurrentDirectionalAction() {
   if (!carrier) {
     return;
   }
-  const actionPoint = pendingCursor || { x: carrier.x, y: carrier.y };
+  if (isMouseInputMode()) {
+    const actionPoint = pendingCursor || { x: carrier.x, y: carrier.y };
+    sendAction(actionPoint.x, actionPoint.y);
+    return;
+  }
+
+  let rawDx = 0;
+  let rawDy = 0;
+  if (inputMode === "keyboard") {
+    rawDx = (keyboardMove.right ? 1 : 0) - (keyboardMove.left ? 1 : 0);
+    rawDy = (keyboardMove.down ? 1 : 0) - (keyboardMove.up ? 1 : 0);
+  } else if (inputMode === "vstick") {
+    rawDx = virtualStick.x;
+    rawDy = virtualStick.y;
+  }
+
+  let dirX = 0;
+  let dirY = 0;
+  const intentLength = Math.hypot(rawDx, rawDy);
+  if (intentLength > 0.001) {
+    dirX = rawDx / intentLength;
+    dirY = rawDy / intentLength;
+  } else {
+    const facingLength = Math.hypot(Number(carrier.dirX) || 0, Number(carrier.dirY) || 0);
+    if (facingLength > 0.001) {
+      dirX = carrier.dirX / facingLength;
+      dirY = carrier.dirY / facingLength;
+    } else {
+      dirX = 1;
+      dirY = 0;
+    }
+  }
+
+  const actionPoint = {
+    x: clamp(carrier.x + dirX * DIRECT_ACTION_DISTANCE, 0, FIELD_WIDTH),
+    y: clamp(carrier.y + dirY * DIRECT_ACTION_DISTANCE, 0, FIELD_HEIGHT)
+  };
   sendAction(actionPoint.x, actionPoint.y);
 }
 
@@ -1239,10 +1489,11 @@ function drawField() {
 
   const goalTop = FIELD_HEIGHT / 2 - GOAL_WIDTH / 2;
   const goalBottom = goalTop + GOAL_WIDTH;
+  const goalBoxTop = FIELD_HEIGHT / 2 - GOAL_BOX_HEIGHT / 2;
 
   // Penalty box lines from each goal line.
-  ctx.strokeRect(playableLeft, goalTop, GOAL_BOX_DEPTH, GOAL_WIDTH);
-  ctx.strokeRect(playableRight - GOAL_BOX_DEPTH, goalTop, GOAL_BOX_DEPTH, GOAL_WIDTH);
+  ctx.strokeRect(playableLeft, goalBoxTop, GOAL_BOX_DEPTH, GOAL_BOX_HEIGHT);
+  ctx.strokeRect(playableRight - GOAL_BOX_DEPTH, goalBoxTop, GOAL_BOX_DEPTH, GOAL_BOX_HEIGHT);
 
   function drawGoalNet(frontX, backX) {
     const left = Math.min(frontX, backX);
@@ -1427,16 +1678,6 @@ function drawPlayerFigure(player, isSelected, nowMs, facingAngle, forceHandSwing
   ctx.fill();
 
   const playerNumber = getHumanPlayerNumber(player);
-  if (playerNumber) {
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = `bold ${Math.max(7, Math.round(r * 0.44))}px Trebuchet MS`;
-    ctx.lineWidth = 1.2;
-    ctx.strokeStyle = "rgba(0,0,0,0.62)";
-    ctx.strokeText(playerNumber, 0, 0.4);
-    ctx.fillStyle = "#f8f8f8";
-    ctx.fillText(playerNumber, 0, 0.4);
-  }
 
   // Two-step hand animation only while running.
   if (anim.handActive && runBlend > 0.03) {
@@ -1454,6 +1695,17 @@ function drawPlayerFigure(player, isSelected, nowMs, facingAngle, forceHandSwing
   }
 
   ctx.restore();
+
+  if (playerNumber) {
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `bold ${Math.max(7, Math.round(r * 0.44))}px Trebuchet MS`;
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = "rgba(0,0,0,0.62)";
+    ctx.strokeText(playerNumber, player.x, player.y + 0.4);
+    ctx.fillStyle = "#f8f8f8";
+    ctx.fillText(playerNumber, player.x, player.y + 0.4);
+  }
 }
 
 function getFacingAngleForPlayer(player, isSelected) {
@@ -1504,6 +1756,8 @@ function getFacingAngleForPlayer(player, isSelected) {
 
 function drawState() {
   if (!state) {
+    halftimeOverlayState.active = false;
+    resetBallAnimation();
     return;
   }
 
@@ -1527,13 +1781,7 @@ function drawState() {
     drawPlayerFigure(player, isSelected, nowMs, facingAngle, forceHandSwing);
   }
 
-  ctx.beginPath();
-  ctx.arc(state.ball.x, state.ball.y, 7, 0, Math.PI * 2);
-  ctx.fillStyle = "#f8f8f8";
-  ctx.fill();
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = "#111";
-  ctx.stroke();
+  drawSoccerBall(state.ball, nowMs);
 
   if (gameActive && pendingCursor && isMouseInputMode()) {
     ctx.strokeStyle = "rgba(255,255,255,0.9)";
@@ -1577,6 +1825,23 @@ function drawState() {
     playWhistleAudio();
     goalOverlayState.stage = null;
     hideGoalGif();
+  }
+
+  if (state.halftimePause) {
+    if (!halftimeOverlayState.active) {
+      halftimeOverlayState.active = true;
+      playerAnimCache.clear();
+      playWhistleAudio();
+    }
+    ctx.fillStyle = "rgba(0,0,0,0.56)";
+    ctx.fillRect(0, 0, FIELD_WIDTH, FIELD_HEIGHT);
+    ctx.fillStyle = "#fff2a8";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "bold 118px Trebuchet MS";
+    ctx.fillText("HALF-TIME", FIELD_WIDTH / 2, FIELD_HEIGHT / 2);
+  } else if (halftimeOverlayState.active) {
+    halftimeOverlayState.active = false;
   }
 }
 
