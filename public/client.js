@@ -19,13 +19,14 @@ const REAL_MATCH_MS = 2 * 60 * 1000;
 const VIRTUAL_MATCH_SECONDS = 90 * 60;
 const SPRITE_FACING_OFFSET = Math.PI / 2;
 const HAND_POSE_INTERVAL_MS = 220;
+const PRELOAD_ASSET_TIMEOUT_MS = 15000;
 const REMOTE_API_BASE = "https://football-2kxo.onrender.com";
-const API_BASE =
+const IS_LOCAL_HOST =
   window.location.hostname === "localhost" ||
   window.location.hostname === "127.0.0.1" ||
-  window.location.hostname === "0.0.0.0"
-    ? ""
-    : REMOTE_API_BASE;
+  window.location.hostname === "0.0.0.0";
+const ONLINE_API_BASE = IS_LOCAL_HOST ? "" : REMOTE_API_BASE;
+const CPU_API_BASE = IS_LOCAL_HOST ? "" : "http://127.0.0.1:3000";
 
 const COUNTRY_GROUPS = {
   Africa: [
@@ -110,6 +111,9 @@ const pauseEndBtn = document.getElementById("pauseEndBtn");
 const preloadOverlay = document.getElementById("preloadOverlay");
 const preloadLoading = document.getElementById("preloadLoading");
 const preloadDots = document.getElementById("preloadDots");
+const preloadLoadingWord = preloadLoading
+  ? preloadLoading.querySelector(".preload-loading-word")
+  : null;
 const virtualControls = document.getElementById("virtualControls");
 const vstickBase = document.getElementById("vstickBase");
 const vstickKnob = document.getElementById("vstickKnob");
@@ -531,13 +535,32 @@ async function probeServerConnection() {
 }
 
 function startServerConnectionWatch() {
+  if (serverConnectRetryTimer !== null) {
+    clearTimeout(serverConnectRetryTimer);
+    serverConnectRetryTimer = null;
+  }
   serverConnected = false;
   setServerConnectionStatus(false);
   scheduleServerConnectionProbe(0);
 }
 
-function apiUrl(path) {
-  return `${API_BASE}${path}`;
+function resolveRequestMode(requestMode = null) {
+  if (requestMode === "cpu" || requestMode === "online") {
+    return requestMode;
+  }
+  if (token) {
+    return currentMatchMode === "online" ? "online" : "cpu";
+  }
+  return mode === "online" ? "online" : "cpu";
+}
+
+function apiBaseForMode(requestMode = null) {
+  const resolvedMode = resolveRequestMode(requestMode);
+  return resolvedMode === "online" ? ONLINE_API_BASE : CPU_API_BASE;
+}
+
+function apiUrl(path, requestMode = null) {
+  return `${apiBaseForMode(requestMode)}${path}`;
 }
 
 function normalizeCode4(raw) {
@@ -648,6 +671,7 @@ function setMode(nextMode) {
     setStatus("Online mode: create or join a room with a 4-digit code.");
   }
   updateFieldLayout();
+  startServerConnectionWatch();
 }
 
 function populateCountries() {
@@ -746,6 +770,9 @@ function showPreloadOverlay() {
     return;
   }
 
+  if (preloadLoadingWord) {
+    preloadLoadingWord.textContent = "Loading assets";
+  }
   preloadDotCount = 1;
   preloadDots.textContent = ".";
   preloadOverlay.classList.remove("hidden");
@@ -767,9 +794,21 @@ function hidePreloadOverlay() {
   if (preloadDots) {
     preloadDots.textContent = "...";
   }
+  if (preloadLoadingWord) {
+    preloadLoadingWord.textContent = "LOADING";
+  }
   if (preloadOverlay) {
     preloadOverlay.classList.add("hidden");
   }
+}
+
+function updatePreloadOverlayProgress(loaded, total) {
+  if (!preloadLoadingWord) {
+    return;
+  }
+  const safeLoaded = Math.max(0, Math.trunc(loaded));
+  const safeTotal = Math.max(0, Math.trunc(total));
+  preloadLoadingWord.textContent = `Loading assets ${safeLoaded}/${safeTotal}`;
 }
 
 function preloadSingleAsset(url) {
@@ -777,17 +816,69 @@ function preloadSingleAsset(url) {
   if (lower.endsWith(".gif")) {
     return new Promise((resolve, reject) => {
       const img = new Image();
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error(`Failed to load asset: ${url}`));
+      let settled = false;
+      const cleanup = () => {
+        img.onload = null;
+        img.onerror = null;
+      };
+      const finish = (err = null) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      };
+      const timeoutId = window.setTimeout(() => {
+        finish(new Error(`Timed out loading asset: ${url}`));
+      }, PRELOAD_ASSET_TIMEOUT_MS);
+      img.onload = () => {
+        clearTimeout(timeoutId);
+        finish();
+      };
+      img.onerror = () => {
+        clearTimeout(timeoutId);
+        finish(new Error(`Failed to load asset: ${url}`));
+      };
       img.src = url;
     });
   }
 
-  return fetch(url, { cache: "force-cache" }).then((response) => {
-    if (!response.ok) {
-      throw new Error(`Failed to load asset: ${url}`);
-    }
-    return response.arrayBuffer();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (err = null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (err) {
+        reject(err);
+      } else {
+        resolve();
+      }
+    };
+    const timeoutId = window.setTimeout(() => {
+      finish(new Error(`Timed out loading asset: ${url}`));
+    }, PRELOAD_ASSET_TIMEOUT_MS);
+    fetch(url, { cache: "force-cache" })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to load asset: ${url}`);
+        }
+        return response.arrayBuffer();
+      })
+      .then(() => {
+        clearTimeout(timeoutId);
+        finish();
+      })
+      .catch((err) => {
+        clearTimeout(timeoutId);
+        finish(err);
+      });
   });
 }
 
@@ -807,15 +898,14 @@ async function ensureAssetsPreloaded(preview = null) {
     const total = REQUIRED_ASSETS.length;
     let loaded = 0;
 
+    updatePreloadOverlayProgress(0, total);
     assetsPreloadPromise = Promise.all(
       REQUIRED_ASSETS.map(async (url) => {
         await preloadSingleAsset(url);
         loaded += 1;
-        setStatus(`Loading assets ${loaded}/${total}...`);
+        updatePreloadOverlayProgress(loaded, total);
       })
     );
-
-    setStatus(`Loading assets 0/${total}...`);
     try {
       await assetsPreloadPromise;
       assetsReady = true;
@@ -1174,11 +1264,20 @@ function showResultOverlay(winnerText) {
 }
 
 async function apiPost(path, payload) {
-  const response = await fetch(apiUrl(path), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload || {})
-  });
+  let response = null;
+  try {
+    response = await fetch(apiUrl(path), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload || {})
+    });
+  } catch (err) {
+    const requestMode = resolveRequestMode();
+    if (requestMode === "cpu" && !IS_LOCAL_HOST) {
+      throw new Error("Local CPU server not reachable at http://127.0.0.1:3000.");
+    }
+    throw err;
+  }
   const json = await response.json().catch(() => ({}));
   if (!response.ok || json.ok === false) {
     throw new Error(json.message || `Request failed (${response.status})`);
@@ -2526,5 +2625,4 @@ const initialInputMode = isLikelyMobileBrowser()
   : inputModeInputs.find((input) => input.checked)?.value || "mouse";
 setInputMode(initialInputMode);
 render();
-startServerConnectionWatch();
 void preloadOnInitialLaunch();
