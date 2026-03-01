@@ -788,7 +788,8 @@ body {
 
   .hud-score,
   .hud-time {
-    line-height: 1;
+    line-height: 1.12;
+    padding-top: 2px;
   }
 
   .hud-score {
@@ -815,7 +816,11 @@ body {
   }
 
   .app.vstick-active .hud {
-    top: clamp(6px, 1.6vh, 14px);
+    position: fixed;
+    left: calc(10px + env(safe-area-inset-left));
+    right: calc(10px + env(safe-area-inset-right));
+    top: calc(6px + env(safe-area-inset-top));
+    z-index: 14;
   }
 
   .app.vstick-active .virtual-controls {
