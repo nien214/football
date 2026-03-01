@@ -780,6 +780,25 @@ body {
 }
 
 @media (orientation: landscape) and (pointer: coarse) {
+  .hud {
+    left: 10px;
+    right: 10px;
+    top: clamp(6px, 1.6vh, 14px);
+  }
+
+  .hud-score,
+  .hud-time {
+    line-height: 1;
+  }
+
+  .hud-score {
+    font-size: clamp(26px, 4.5vw, 34px);
+  }
+
+  .hud-time {
+    font-size: clamp(24px, 4.1vw, 32px);
+  }
+
   .app.vstick-active {
     width: min(
       calc(var(--field-max-width) + (var(--landscape-side-space) * 2)),
@@ -796,7 +815,7 @@ body {
   }
 
   .app.vstick-active .hud {
-    top: -48px;
+    top: clamp(6px, 1.6vh, 14px);
   }
 
   .app.vstick-active .virtual-controls {
