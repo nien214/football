@@ -17,6 +17,7 @@ const POSSESSION_PROTECTION_MS = 1000;
 const GOAL_GIF_MS = 2600;
 const GOAL_SCORE_MS = 1650;
 const KICKOFF_DELAY_MS = 3000;
+const HALFTIME_KICKOFF_DELAY_MS = 2000;
 const HALFTIME_BREAK_MS = 3000;
 const HALFTIME_CLOCK_MS = MATCH_TIME_MS / 2;
 
@@ -34,7 +35,7 @@ const GOAL_LINE_SHOT_FALLOFF_RANGE =
 
 const BALL_RADIUS = 7;
 const PLAYER_RADIUS = 19;
-const CLICK_SELECT_RADIUS = PLAYER_RADIUS + 9;
+const CLICK_SELECT_RADIUS = PLAYER_RADIUS + 14;
 const OUTFIELD_SPEED = 120;
 const DEFENDER_SPEED = 110;
 const PASS_SPEED = 280;
@@ -572,12 +573,18 @@ function resetForKickoff(room, kickoffTeam, now, kickoffDelayMs = KICKOFF_DELAY_
     player.dirY = 0;
   }
 
-  room.inputs[0].selectedId = "0-1";
-  room.inputs[1].selectedId = "1-1";
-  room.inputs[0].clicks = [];
-  room.inputs[1].clicks = [];
-  room.inputs[0].cursor = { x: room.teams[0][1].x, y: room.teams[0][1].y };
-  room.inputs[1].cursor = { x: room.teams[1][1].x, y: room.teams[1][1].y };
+  for (let team = 0; team < 2; team += 1) {
+    const defaultIndex = 2;
+    const selectedPlayer =
+      room.teams[team][defaultIndex] ||
+      room.teams[team][room.teams[team].length - 1] ||
+      room.teams[team][0];
+    if (selectedPlayer) {
+      room.inputs[team].selectedId = selectedPlayer.id;
+      room.inputs[team].cursor = { x: selectedPlayer.x, y: selectedPlayer.y };
+    }
+    room.inputs[team].clicks = [];
+  }
 
   const centerY = FIELD.height / 2;
   const attackers = room.teams[kickoffTeam];
@@ -616,8 +623,12 @@ function resetForKickoff(room, kickoffTeam, now, kickoffDelayMs = KICKOFF_DELAY_
   room.ball.vy = 0;
   room.ball.curveTurnRate = 0;
   room.ball.curveUntil = 0;
-  room.ball.lockUntil = now + 180;
-  room.kickoffUntil = now + Math.max(0, kickoffDelayMs);
+  const kickoffReadyAt = now + Math.max(0, kickoffDelayMs);
+  room.kickoffUntil = kickoffReadyAt;
+  room.ball.lockUntil = kickoffReadyAt + 180;
+  room.ball.stealLockUntil = kickoffReadyAt + POSSESSION_PROTECTION_MS;
+  room.nextAiDecisionAt[0] = kickoffReadyAt;
+  room.nextAiDecisionAt[1] = kickoffReadyAt;
 }
 
 function scoreGoal(room, scoringTeam, now) {
@@ -1092,7 +1103,7 @@ function completeHalftimeBreak(room, now) {
   const nextKickoffTeam = room.halftimePause ? room.halftimePause.kickoffTeam : 0;
   room.halftimePause = null;
   room.sidesFlipped = !room.sidesFlipped;
-  resetForKickoff(room, nextKickoffTeam, now + 40, KICKOFF_DELAY_MS);
+  resetForKickoff(room, nextKickoffTeam, now + 40, HALFTIME_KICKOFF_DELAY_MS);
 }
 
 function setOutfieldTarget(room, player, context, now) {
@@ -1566,6 +1577,7 @@ function serializeState(room) {
     timeLeftMs: Math.ceil(room.timeLeftMs),
     paused: Boolean(room.paused),
     ended: room.ended,
+    endReason: room.endReason,
     players: room.allPlayers.map((player) => ({
       id: player.id,
       team: player.team,

@@ -153,20 +153,32 @@ const CELEBRATION_GIFS = [
   "assets/bra_celeb5.gif",
   "assets/bra_celeb6.gif",
   "assets/bra_celeb7.gif",
+  "assets/bra_celeb8.gif",
+  "assets/esp_celeb1.gif",
+  "assets/fra_celeb1.gif",
+  "assets/fra_celeb2.gif",
+  "assets/ita_celeb1.gif",
   "assets/kor_celeb1.gif",
+  "assets/ned_celeb1.gif",
   "assets/por_celeb1.gif"
 ];
+function isBrazilGif(src) {
+  return String(src || "")
+    .toLowerCase()
+    .includes("/bra_");
+}
+
+function isArgentinaGif(src) {
+  return String(src || "")
+    .toLowerCase()
+    .includes("/arg_");
+}
+
 const BRAZIL_GIFS = CELEBRATION_GIFS.filter((src) =>
-  src.toLowerCase().includes("/bra_")
+  isBrazilGif(src)
 );
 const ARGENTINA_GIFS = CELEBRATION_GIFS.filter((src) =>
-  src.toLowerCase().includes("/arg_")
-);
-const NON_BRAZIL_GIFS = CELEBRATION_GIFS.filter(
-  (src) => !src.toLowerCase().includes("/bra_")
-);
-const NON_ARGENTINA_GIFS = CELEBRATION_GIFS.filter(
-  (src) => !src.toLowerCase().includes("/arg_")
+  isArgentinaGif(src)
 );
 const REQUIRED_ASSETS = [
   ...CELEBRATION_GIFS,
@@ -215,6 +227,7 @@ let assetsPreloadPromise = null;
 let preloadDotsTimer = null;
 let preloadDotCount = 0;
 let hasPlayedEndWarningWhistle = false;
+let hasPlayedFinalWhistle = false;
 let onlineStartFlowInFlight = false;
 let onlineStartReadySent = false;
 let onlineStartRoomCode = "";
@@ -229,7 +242,7 @@ const goalOverlayState = {
 const halftimeOverlayState = {
   active: false
 };
-let lastGoalGifSrc = "";
+const usedGoalGifs = new Set();
 const keyboardMove = {
   up: false,
   down: false,
@@ -445,6 +458,18 @@ function extractFlag(countryText) {
   }
   const first = text.split(/\s+/)[0];
   return first.length <= 6 ? first : "🏳️";
+}
+
+function isBrazilCountry(countryText) {
+  const text = String(countryText || "");
+  const lower = text.toLowerCase();
+  return text.includes("🇧🇷") || lower.includes("brazil");
+}
+
+function isArgentinaCountry(countryText) {
+  const text = String(countryText || "");
+  const lower = text.toLowerCase();
+  return text.includes("🇦🇷") || lower.includes("argentina");
 }
 
 function setStatus(text, isError = false) {
@@ -1047,55 +1072,57 @@ function hideGoalGif() {
   }
 }
 
+function pickUnplayedGoalGif(pool) {
+  if (!Array.isArray(pool) || pool.length === 0) {
+    return null;
+  }
+  let choices = pool.filter((src) => !usedGoalGifs.has(src));
+  if (choices.length === 0) {
+    if (usedGoalGifs.size >= CELEBRATION_GIFS.length) {
+      usedGoalGifs.clear();
+    }
+    choices = pool.slice();
+  }
+  const pick = choices[Math.floor(Math.random() * choices.length)];
+  usedGoalGifs.add(pick);
+  return pick;
+}
+
+function getEligibleGoalGifPool() {
+  if (!Array.isArray(CELEBRATION_GIFS) || CELEBRATION_GIFS.length === 0) {
+    return [];
+  }
+  const scoringTeam = Number(state?.goalPause?.scoringTeam);
+  const opponentTeam = scoringTeam === 0 ? 1 : 0;
+  const scorerCountry = String(state?.profiles?.[scoringTeam]?.country || "");
+  const opponentCountry = String(state?.profiles?.[opponentTeam]?.country || "");
+
+  if (isArgentinaCountry(scorerCountry)) {
+    return ARGENTINA_GIFS.length > 0 ? ARGENTINA_GIFS : CELEBRATION_GIFS;
+  }
+  if (isBrazilCountry(scorerCountry)) {
+    return BRAZIL_GIFS.length > 0 ? BRAZIL_GIFS : CELEBRATION_GIFS;
+  }
+
+  let pool = CELEBRATION_GIFS.slice();
+  if (isArgentinaCountry(opponentCountry)) {
+    pool = pool.filter((src) => !isArgentinaGif(src));
+  }
+  if (isBrazilCountry(opponentCountry)) {
+    pool = pool.filter((src) => !isBrazilGif(src));
+  }
+  return pool.length > 0 ? pool : CELEBRATION_GIFS;
+}
+
 function playGoalGif() {
   if (!goalGifOverlay || !goalGif) {
     return;
   }
-  const scoringTeam = state?.goalPause?.scoringTeam;
-  const countryText = String(state?.profiles?.[scoringTeam]?.country || "");
-  const countryLower = countryText.toLowerCase();
-  const isBrazilScorer = countryText.includes("🇧🇷") || countryLower.includes("brazil");
-  const isArgentinaScorer = countryText.includes("🇦🇷") || countryLower.includes("argentina");
-
-  let pool = CELEBRATION_GIFS;
-  if (isBrazilScorer) {
-    pool = BRAZIL_GIFS.length > 0 ? BRAZIL_GIFS : CELEBRATION_GIFS;
-  } else if (isArgentinaScorer) {
-    pool = ARGENTINA_GIFS.length > 0 ? ARGENTINA_GIFS : CELEBRATION_GIFS;
-  } else {
-    pool = CELEBRATION_GIFS;
+  const pool = getEligibleGoalGifPool();
+  const pick = pickUnplayedGoalGif(pool);
+  if (!pick) {
+    return;
   }
-
-  if (!isArgentinaScorer) {
-    const noArg = pool.filter((src) => !src.toLowerCase().includes("/arg_"));
-    if (noArg.length > 0) {
-      pool = noArg;
-    } else if (NON_ARGENTINA_GIFS.length > 0) {
-      pool = NON_ARGENTINA_GIFS;
-    }
-  }
-
-  if (!isBrazilScorer) {
-    const noBra = pool.filter((src) => !src.toLowerCase().includes("/bra_"));
-    if (noBra.length > 0) {
-      pool = noBra;
-    } else if (NON_BRAZIL_GIFS.length > 0) {
-      pool = NON_BRAZIL_GIFS;
-    }
-  }
-
-  if (!Array.isArray(pool) || pool.length === 0) {
-    pool = CELEBRATION_GIFS;
-  }
-  let choices = pool;
-  if (lastGoalGifSrc && pool.length > 1) {
-    const filtered = pool.filter((src) => src !== lastGoalGifSrc);
-    if (filtered.length > 0) {
-      choices = filtered;
-    }
-  }
-  const pick = choices[Math.floor(Math.random() * choices.length)];
-  lastGoalGifSrc = pick;
   // Reset src first so repeated same GIF still replays from frame 1.
   goalGif.removeAttribute("src");
   goalGif.src = pick;
@@ -1110,12 +1137,14 @@ function showMenu() {
   hidePauseOverlay();
   hideResultOverlay();
   hideGoalGif();
+  usedGoalGifs.clear();
   hidePreloadOverlay();
   if (howToPlayOverlay) {
     howToPlayOverlay.classList.add("hidden");
   }
   stopCrowdAudio();
   hasPlayedEndWarningWhistle = false;
+  hasPlayedFinalWhistle = false;
   resetOnlineStartFlow();
   syncVirtualControls();
 }
@@ -1317,6 +1346,7 @@ function handleServerState(payload) {
     startCrowdAudio();
     if (!wasActive) {
       hasPlayedEndWarningWhistle = false;
+      hasPlayedFinalWhistle = false;
       playWhistleAudio();
     }
 
@@ -1356,6 +1386,11 @@ function handleServerState(payload) {
     state = payload.state;
     gameActive = false;
     clearKeyboardMove();
+    const endedByTime = state && state.endReason === "time";
+    if (endedByTime && !hasPlayedFinalWhistle) {
+      playWhistleAudio();
+      hasPlayedFinalWhistle = true;
+    }
     stopCrowdAudio();
     goalOverlayState.stage = null;
     hideGoalGif();
@@ -1982,10 +2017,11 @@ function drawState() {
     ctx.fillStyle = "#fff2a8";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = "bold 118px Trebuchet MS";
-    ctx.fillText("HALF-TIME", FIELD_WIDTH / 2, FIELD_HEIGHT / 2);
+      ctx.font = "bold 118px Trebuchet MS";
+      ctx.fillText("HALF-TIME", FIELD_WIDTH / 2, FIELD_HEIGHT / 2);
   } else if (halftimeOverlayState.active) {
     halftimeOverlayState.active = false;
+    playWhistleAudio();
   }
 }
 
@@ -2190,6 +2226,19 @@ canvas.addEventListener("click", (event) => {
   }
   const pos = worldPosFromMouse(event);
   sendClick(pos.x, pos.y);
+});
+
+window.addEventListener("contextmenu", (event) => {
+  if (!gameActive) {
+    return;
+  }
+  const target = event.target;
+  const inVirtualControls = Boolean(
+    virtualControls && target instanceof Node && virtualControls.contains(target)
+  );
+  if (target === canvas || inVirtualControls) {
+    event.preventDefault();
+  }
 });
 
 window.addEventListener("keydown", (event) => {

@@ -72,6 +72,10 @@ body {
   background: #2a8f4a;
   cursor: none;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
 }
 
 .panel {
@@ -572,7 +576,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 18px;
 }
 
 .v-number-row {
@@ -682,7 +686,7 @@ body {
   }
 }
 
-@media (max-width: 900px) and (orientation: portrait) {
+@media (orientation: portrait) and (pointer: coarse) {
   body {
     align-items: flex-start;
     justify-content: flex-start;
@@ -716,16 +720,17 @@ body {
   }
 
   .app.vstick-active .virtual-controls {
-    position: fixed;
-    left: 0;
-    right: 0;
-    top: 62svh;
+    position: static;
+    left: auto;
+    right: auto;
+    top: auto;
     bottom: auto;
-    transform: translateY(-50%);
+    transform: none;
     width: 100%;
     max-width: none;
-    padding: 0 10px;
-    z-index: 11;
+    padding: 0 10px calc(10px + env(safe-area-inset-bottom));
+    margin-top: 8px;
+    z-index: auto;
   }
 
   .app.vstick-active .v-main-row,
@@ -738,6 +743,11 @@ body {
     justify-content: space-between;
     gap: clamp(36px, 9vw, 92px);
     padding: 0 10px;
+  }
+
+  .app.vstick-active .v-action-side {
+    justify-content: center;
+    gap: 18px;
   }
 
   .app.vstick-active .vstick-base {
@@ -795,6 +805,13 @@ body {
     z-index: 11;
   }
 
+  .app.vstick-active,
+  .app.vstick-active * {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+
   .app.vstick-active .v-main-row {
     position: absolute;
     left: 0;
@@ -826,8 +843,8 @@ body {
   .app.vstick-active .v-action-side {
     width: var(--landscape-side-space);
     align-items: center;
-    justify-content: flex-end;
-    gap: 14px;
+    justify-content: center;
+    gap: 18px;
     padding: 0;
   }
 
