@@ -783,7 +783,7 @@ body {
   .hud {
     left: 10px;
     right: 10px;
-    top: clamp(6px, 1.6vh, 14px);
+    top: clamp(18px, 3.2vh, 30px);
   }
 
   .hud-score,
@@ -819,7 +819,7 @@ body {
     position: fixed;
     left: calc(10px + env(safe-area-inset-left));
     right: calc(10px + env(safe-area-inset-right));
-    top: calc(6px + env(safe-area-inset-top));
+    top: calc(18px + env(safe-area-inset-top));
     z-index: 14;
   }
 
