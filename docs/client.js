@@ -21,12 +21,6 @@ const SPRITE_FACING_OFFSET = Math.PI / 2;
 const HAND_POSE_INTERVAL_MS = 220;
 const PRELOAD_ASSET_TIMEOUT_MS = 15000;
 const REMOTE_API_BASE = "https://football-2kxo.onrender.com";
-const IS_LOCAL_HOST =
-  window.location.hostname === "localhost" ||
-  window.location.hostname === "127.0.0.1" ||
-  window.location.hostname === "0.0.0.0";
-const ONLINE_API_BASE = IS_LOCAL_HOST ? "" : REMOTE_API_BASE;
-const CPU_API_BASE = IS_LOCAL_HOST ? "" : "http://127.0.0.1:3000";
 
 const COUNTRY_GROUPS = {
   Africa: [
@@ -544,23 +538,8 @@ function startServerConnectionWatch() {
   scheduleServerConnectionProbe(0);
 }
 
-function resolveRequestMode(requestMode = null) {
-  if (requestMode === "cpu" || requestMode === "online") {
-    return requestMode;
-  }
-  if (token) {
-    return currentMatchMode === "online" ? "online" : "cpu";
-  }
-  return mode === "online" ? "online" : "cpu";
-}
-
-function apiBaseForMode(requestMode = null) {
-  const resolvedMode = resolveRequestMode(requestMode);
-  return resolvedMode === "online" ? ONLINE_API_BASE : CPU_API_BASE;
-}
-
-function apiUrl(path, requestMode = null) {
-  return `${apiBaseForMode(requestMode)}${path}`;
+function apiUrl(path) {
+  return `${REMOTE_API_BASE}${path}`;
 }
 
 function normalizeCode4(raw) {
@@ -1264,20 +1243,11 @@ function showResultOverlay(winnerText) {
 }
 
 async function apiPost(path, payload) {
-  let response = null;
-  try {
-    response = await fetch(apiUrl(path), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload || {})
-    });
-  } catch (err) {
-    const requestMode = resolveRequestMode();
-    if (requestMode === "cpu" && !IS_LOCAL_HOST) {
-      throw new Error("Local CPU server not reachable at http://127.0.0.1:3000.");
-    }
-    throw err;
-  }
+  const response = await fetch(apiUrl(path), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {})
+  });
   const json = await response.json().catch(() => ({}));
   if (!response.ok || json.ok === false) {
     throw new Error(json.message || `Request failed (${response.status})`);
