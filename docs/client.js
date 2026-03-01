@@ -581,17 +581,34 @@ function shouldShowVirtualControls() {
 }
 
 function updateFieldLayout() {
-  const viewportW = Math.max(320, window.innerWidth || document.documentElement.clientWidth || 0);
-  const viewportH = Math.max(320, window.innerHeight || document.documentElement.clientHeight || 0);
+  const visualViewport = window.visualViewport;
+  const viewportW = Math.max(
+    320,
+    Math.round(
+      (visualViewport && Number.isFinite(visualViewport.width) ? visualViewport.width : 0) ||
+        window.innerWidth ||
+        document.documentElement.clientWidth ||
+        0
+    )
+  );
+  const viewportH = Math.max(
+    320,
+    Math.round(
+      (visualViewport && Number.isFinite(visualViewport.height) ? visualViewport.height : 0) ||
+        window.innerHeight ||
+        document.documentElement.clientHeight ||
+        0
+    )
+  );
   const portrait = viewportH >= viewportW;
   const controlsVisible = shouldShowVirtualControls();
   const landscapeVStick = controlsVisible && !portrait;
   const sideSpace = landscapeVStick
     ? Math.round(clamp(viewportW * 0.24, 140, 280))
     : 0;
-  let reservedHeight = portrait ? 148 : 86;
+  let reservedHeight = portrait ? 148 : 92;
   if (controlsVisible) {
-    reservedHeight += portrait ? 330 : 70;
+    reservedHeight += portrait ? 330 : 88;
   }
   const maxByHeight = ((viewportH - reservedHeight) * FIELD_WIDTH) / FIELD_HEIGHT;
   const maxByWidth = viewportW - (portrait ? 16 : 20) - sideSpace * 2;
@@ -2519,6 +2536,14 @@ window.addEventListener("orientationchange", () => {
     syncVirtualControls();
   }, 80);
 });
+
+if (window.visualViewport) {
+  const syncFromVisualViewport = () => {
+    syncVirtualControls();
+  };
+  window.visualViewport.addEventListener("resize", syncFromVisualViewport);
+  window.visualViewport.addEventListener("scroll", syncFromVisualViewport);
+}
 
 document.addEventListener("contextmenu", (event) => {
   if (isTextInputElement(event.target)) {

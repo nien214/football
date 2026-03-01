@@ -576,7 +576,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
+  gap: 28px;
 }
 
 .v-number-row {
@@ -747,7 +747,7 @@ body {
 
   .app.vstick-active .v-action-side {
     justify-content: center;
-    gap: 18px;
+    gap: 28px;
   }
 
   .app.vstick-active .vstick-base {
@@ -786,13 +786,17 @@ body {
       calc(100vw - 4px)
     );
     max-width: 100%;
-    padding-bottom: calc(62px + env(safe-area-inset-bottom));
+    padding-bottom: calc(80px + env(safe-area-inset-bottom));
     gap: 0;
   }
 
   .app.vstick-active .field-wrap {
     width: min(100%, var(--field-max-width));
     margin: 0 auto;
+  }
+
+  .app.vstick-active .hud {
+    top: -48px;
   }
 
   .app.vstick-active .virtual-controls {
@@ -844,7 +848,7 @@ body {
     width: var(--landscape-side-space);
     align-items: center;
     justify-content: center;
-    gap: 18px;
+    gap: 28px;
     padding: 0;
   }
 
