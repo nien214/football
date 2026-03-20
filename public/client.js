@@ -123,6 +123,7 @@ const cpuDifficultyInputs = Array.from(
 const canvas = document.getElementById("pitch");
 const ctx = canvas.getContext("2d");
 const appRoot = document.querySelector(".app");
+const fieldWrap = document.querySelector(".field-wrap");
 
 const CPU_COUNTRIES = [
   "🇧🇷 Brazil",
@@ -233,6 +234,7 @@ let serverConnected = false;
 let serverConnectRetryTimer = null;
 let serverConnectInFlight = false;
 let audioUnlocked = false;
+let menuFitFrame = 0;
 const sfxStopTimers = new WeakMap();
 const goalOverlayState = {
   stage: null
@@ -477,6 +479,7 @@ function setStatus(text, isError = false) {
   statusText.textContent = text;
   statusText.dataset.error = isError ? "1" : "0";
   lastStatus = text;
+  scheduleMenuFit();
 }
 
 function setServerConnectionStatus(connected) {
@@ -487,6 +490,7 @@ function setServerConnectionStatus(connected) {
   serverConnStatus.textContent = connected
     ? "Connected to server."
     : "Connecting to the server...";
+  scheduleMenuFit();
 }
 
 function scheduleServerConnectionProbe(delayMs = 0) {
@@ -580,51 +584,90 @@ function shouldShowVirtualControls() {
   return gameActive && isVStickInputMode() && isLikelyMobileBrowser();
 }
 
+function readViewportDimension(...candidates) {
+  const values = candidates
+    .map((value) => Math.round(Number(value)))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  if (!values.length) {
+    return 320;
+  }
+  return Math.max(320, Math.min(...values));
+}
+
+function readCssPixels(style, property) {
+  return Math.max(0, parseFloat(style.getPropertyValue(property)) || 0);
+}
+
 function updateFieldLayout() {
   const visualViewport = window.visualViewport;
-  const viewportW = Math.max(
-    320,
-    Math.round(
-      (visualViewport && Number.isFinite(visualViewport.width) ? visualViewport.width : 0) ||
-        window.innerWidth ||
-        document.documentElement.clientWidth ||
-        0
-    )
+  const ratio = FIELD_WIDTH / FIELD_HEIGHT;
+  const viewportW = readViewportDimension(
+    visualViewport && visualViewport.width,
+    window.innerWidth,
+    document.documentElement.clientWidth
   );
-  const viewportH = Math.max(
-    320,
-    Math.round(
-      (visualViewport && Number.isFinite(visualViewport.height) ? visualViewport.height : 0) ||
-        window.innerHeight ||
-        document.documentElement.clientHeight ||
-        0
-    )
+  const viewportH = readViewportDimension(
+    visualViewport && visualViewport.height,
+    window.innerHeight,
+    document.documentElement.clientHeight
   );
+  const bodyStyle = getComputedStyle(document.body);
+  const bodyPaddingLeft = readCssPixels(bodyStyle, "padding-left");
+  const bodyPaddingRight = readCssPixels(bodyStyle, "padding-right");
+  const bodyPaddingTop = readCssPixels(bodyStyle, "padding-top");
+  const bodyPaddingBottom = readCssPixels(bodyStyle, "padding-bottom");
   const portrait = viewportH >= viewportW;
   const controlsVisible = shouldShowVirtualControls();
   const landscapeVStick = controlsVisible && !portrait;
   const sideSpace = landscapeVStick
-    ? Math.round(clamp(viewportW * 0.19, 118, 204))
+    ? Math.round(clamp(viewportW * 0.13, 84, 144))
     : 0;
-  const horizontalPadding = portrait
-    ? controlsVisible
-      ? 54
-      : 36
-    : controlsVisible
-      ? 40
-      : 52;
-  let reservedHeight = portrait ? 176 : 126;
-  if (controlsVisible) {
-    reservedHeight += portrait ? 240 : 104;
-  }
-  const maxByHeight = ((viewportH - reservedHeight) * FIELD_WIDTH) / FIELD_HEIGHT;
-  const maxByWidth = viewportW - horizontalPadding - sideSpace * 2;
-  const fieldCap = portrait ? 940 : 1000;
+  const availableWidth = Math.max(260, viewportW - bodyPaddingLeft - bodyPaddingRight);
+  const availableHeight = Math.max(260, viewportH - bodyPaddingTop - bodyPaddingBottom);
+  const frameBleedX = portrait ? 10 : 18;
+  const frameBleedTop = portrait ? 10 : 12;
+  const frameBleedBottom = portrait ? 16 : 28;
+  const portraitControlsReserve = controlsVisible && portrait ? 180 : 0;
+  const maxByHeight =
+    (availableHeight - frameBleedTop - frameBleedBottom - portraitControlsReserve) * ratio;
+  const maxByWidth = availableWidth - frameBleedX * 2 - sideSpace * 2;
+  const fieldCap = 4000;
   const fieldMaxWidth = Math.floor(
     clamp(Math.min(fieldCap, maxByHeight, maxByWidth), 260, fieldCap)
   );
   document.documentElement.style.setProperty("--field-max-width", `${fieldMaxWidth}px`);
   document.documentElement.style.setProperty("--landscape-side-space", `${sideSpace}px`);
+  scheduleMenuFit();
+}
+
+function fitMenuToField() {
+  if (!menu) {
+    return;
+  }
+  menu.style.setProperty("--menu-scale", "1");
+  if (menu.classList.contains("hidden") || !fieldWrap) {
+    return;
+  }
+  const availableWidth = Math.max(180, fieldWrap.clientWidth - 20);
+  const availableHeight = Math.max(180, fieldWrap.clientHeight - 20);
+  const naturalWidth = Math.max(menu.offsetWidth, menu.scrollWidth, 1);
+  const naturalHeight = Math.max(menu.offsetHeight, menu.scrollHeight, 1);
+  const scale = clamp(
+    Math.min(availableWidth / naturalWidth, availableHeight / naturalHeight, 1),
+    0.56,
+    1
+  );
+  menu.style.setProperty("--menu-scale", String(scale));
+}
+
+function scheduleMenuFit() {
+  if (menuFitFrame !== 0) {
+    return;
+  }
+  menuFitFrame = window.requestAnimationFrame(() => {
+    menuFitFrame = 0;
+    fitMenuToField();
+  });
 }
 
 function resetVirtualStick() {
@@ -2555,6 +2598,18 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener("scroll", syncFromVisualViewport);
 }
 
+if (window.ResizeObserver) {
+  const menuFitObserver = new ResizeObserver(() => {
+    scheduleMenuFit();
+  });
+  if (fieldWrap) {
+    menuFitObserver.observe(fieldWrap);
+  }
+  if (menu) {
+    menuFitObserver.observe(menu);
+  }
+}
+
 document.addEventListener("contextmenu", (event) => {
   if (isTextInputElement(event.target)) {
     return;
@@ -2630,4 +2685,5 @@ const initialInputMode = isLikelyMobileBrowser()
   : inputModeInputs.find((input) => input.checked)?.value || "mouse";
 setInputMode(initialInputMode);
 render();
+scheduleMenuFit();
 void preloadOnInitialLaunch();
