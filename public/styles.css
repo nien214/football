@@ -46,13 +46,13 @@ body {
 }
 
 .app {
-  width: min(1000px, 98vw);
+  width: min(960px, calc(100vw - 24px));
   max-width: 100%;
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .field-wrap {
@@ -84,19 +84,19 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 9;
-  width: min(430px, calc(100% - 32px));
-  max-height: calc(100% - 32px);
+  width: min(400px, calc(100% - 40px));
+  max-height: calc(100% - 40px);
   overflow: auto;
   background: rgba(244, 236, 216, 0.95);
   border: 2px solid var(--panel-border);
   border-radius: 12px;
-  padding: 14px;
+  padding: 12px;
   backdrop-filter: blur(2px);
 }
 
 .panel h1 {
   margin: 0;
-  font-size: 30px;
+  font-size: 28px;
 }
 
 .subtitle {
@@ -107,11 +107,11 @@ body {
 
 .field {
   display: grid;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: 68px 1fr;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-  font-size: 14px;
+  gap: 7px;
+  margin-bottom: 9px;
+  font-size: 13px;
 }
 
 .field span {
@@ -121,8 +121,7 @@ body {
 .field input,
 .field select,
 .join-row input,
-.join-row button,
-.controls button {
+.join-row button {
   font: inherit;
 }
 
@@ -131,25 +130,25 @@ body {
 .join-row input {
   border: 1px solid #7b9a75;
   border-radius: 7px;
-  padding: 8px;
+  padding: 7px 8px;
   background: #fcfaef;
 }
 
 .mode-row {
   display: flex;
-  gap: 8px;
-  margin: 8px 0 10px;
+  gap: 6px;
+  margin: 7px 0 9px;
 }
 
 .input-mode-group {
-  margin: 0 0 10px;
+  margin: 0 0 9px;
   border: 1px solid #8ca486;
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 7px 9px;
   background: rgba(255, 255, 255, 0.5);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
@@ -164,7 +163,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
 }
 
@@ -178,7 +177,8 @@ body {
   background: #f8f4e2;
   color: #172a16;
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 7px 9px;
+  font-size: 15px;
   cursor: pointer;
 }
 
@@ -190,7 +190,7 @@ body {
 
 .controls {
   display: grid;
-  gap: 8px;
+  gap: 7px;
 }
 
 .server-conn-status {
@@ -211,11 +211,11 @@ body {
   margin: 0;
   border: 1px solid #8ca486;
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 7px 9px;
   background: rgba(255, 255, 255, 0.5);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: nowrap;
   white-space: nowrap;
   overflow-x: auto;
@@ -232,8 +232,8 @@ body {
 .difficulty-option {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 14px;
+  gap: 6px;
+  font-size: 13px;
   margin: 0;
   cursor: pointer;
 }
@@ -246,10 +246,10 @@ body {
 .primary {
   border: 0;
   border-radius: 8px;
-  padding: 10px;
+  padding: 9px;
   background: var(--primary);
   color: #fff;
-  font: inherit;
+  font: 600 15px/1.2 "Trebuchet MS", "Segoe UI", sans-serif;
   cursor: pointer;
 }
 
@@ -264,7 +264,7 @@ body {
   padding: 9px 10px;
   background: #edf7e8;
   color: #17331c;
-  font: inherit;
+  font: 500 15px/1.2 "Trebuchet MS", "Segoe UI", sans-serif;
   cursor: pointer;
 }
 
@@ -282,7 +282,8 @@ body {
   border: 1px solid #3f5b40;
   border-radius: 8px;
   background: #edf7e8;
-  padding: 8px 12px;
+  padding: 7px 10px;
+  font-size: 15px;
   cursor: pointer;
 }
 
@@ -529,8 +530,8 @@ body {
   width: min(100%, var(--field-max-width));
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 0 2px calc(8px + env(safe-area-inset-bottom));
+  gap: 6px;
+  padding: 0 2px calc(6px + env(safe-area-inset-bottom));
   user-select: none;
   -webkit-user-select: none;
 }
@@ -538,7 +539,7 @@ body {
 .v-main-row {
   display: flex;
   justify-content: center;
-  gap: 44px;
+  gap: 30px;
   align-items: end;
 }
 
@@ -549,8 +550,8 @@ body {
 
 .vstick-base {
   position: relative;
-  width: 198px;
-  height: 198px;
+  width: 176px;
+  height: 176px;
   border-radius: 50%;
   background: radial-gradient(circle at 32% 30%, #f3f2d6, #d5d3b5 70%);
   border: 2px solid rgba(35, 58, 38, 0.75);
@@ -562,8 +563,8 @@ body {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 92px;
-  height: 92px;
+  width: 82px;
+  height: 82px;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #ffffff, #dadfd9 72%);
   border: 2px solid rgba(22, 39, 26, 0.8);
@@ -576,24 +577,24 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 28px;
+  gap: 20px;
 }
 
 .v-number-row {
   display: flex;
   width: 100%;
   justify-content: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .v-number-btn {
-  width: 72px;
-  height: 72px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
   border: 2px solid #133c7d;
   background: radial-gradient(circle at 30% 26%, #6fc5ff 0%, #2b79d7 48%, #185ab3 100%);
   color: #f8fdff;
-  font: 700 27px/1 "Trebuchet MS", "Segoe UI", sans-serif;
+  font: 700 24px/1 "Trebuchet MS", "Segoe UI", sans-serif;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
   box-shadow:
     0 7px 0 #0f468d,
@@ -603,13 +604,13 @@ body {
 }
 
 .v-action-btn {
-  width: 158px;
-  height: 158px;
+  width: 140px;
+  height: 140px;
   border-radius: 50%;
   border: 3px solid #7f1212;
   background: radial-gradient(circle at 30% 24%, #ff9c93 0%, #e83f33 46%, #b41313 100%);
   color: #fff;
-  font: 700 28px/1.15 "Trebuchet MS", "Segoe UI", sans-serif;
+  font: 700 24px/1.15 "Trebuchet MS", "Segoe UI", sans-serif;
   text-align: center;
   padding: 0;
   text-shadow: 0 2px 3px rgba(0, 0, 0, 0.42);
@@ -645,13 +646,13 @@ body {
 }
 
 .v-pause-btn {
-  min-width: 176px;
-  height: 60px;
+  min-width: 156px;
+  height: 54px;
   border-radius: 999px;
   border: 1px solid #3f5b40;
   background: #edf7e8;
   color: #17331c;
-  font: 700 23px/1 "Trebuchet MS", "Segoe UI", sans-serif;
+  font: 700 20px/1 "Trebuchet MS", "Segoe UI", sans-serif;
   touch-action: manipulation;
 }
 
@@ -661,7 +662,21 @@ body {
 
 @media (max-width: 700px) {
   .app {
-    width: 96vw;
+    width: calc(100vw - 18px);
+  }
+
+  .panel {
+    width: min(390px, calc(100% - 30px));
+    max-height: calc(100% - 28px);
+    padding: 11px;
+  }
+
+  .panel h1 {
+    font-size: 26px;
+  }
+
+  .field {
+    grid-template-columns: 64px 1fr;
   }
 
   .hud {
@@ -684,6 +699,13 @@ body {
     bottom: 10px;
     font-size: 28px;
   }
+
+  .mode-btn,
+  .primary,
+  .secondary,
+  .join-row button {
+    font-size: 14px;
+  }
 }
 
 @media (orientation: portrait) and (pointer: coarse) {
@@ -705,7 +727,7 @@ body {
 
   .field-wrap {
     margin: 0 auto;
-    margin-top: 44px;
+    margin-top: 30px;
   }
 
   .hud {
@@ -728,8 +750,8 @@ body {
     transform: none;
     width: 100%;
     max-width: none;
-    padding: 0 10px calc(10px + env(safe-area-inset-bottom));
-    margin-top: 8px;
+    padding: 0 8px calc(8px + env(safe-area-inset-bottom));
+    margin-top: 6px;
     z-index: auto;
   }
 
@@ -741,41 +763,41 @@ body {
 
   .app.vstick-active .v-main-row {
     justify-content: space-between;
-    gap: clamp(36px, 9vw, 92px);
-    padding: 0 10px;
+    gap: clamp(24px, 7vw, 68px);
+    padding: 0 6px;
   }
 
   .app.vstick-active .v-action-side {
     justify-content: center;
-    gap: 28px;
+    gap: 18px;
   }
 
   .app.vstick-active .vstick-base {
-    width: clamp(186px, 46vw, 236px);
-    height: clamp(186px, 46vw, 236px);
+    width: clamp(150px, 38vw, 198px);
+    height: clamp(150px, 38vw, 198px);
   }
 
   .app.vstick-active .vstick-knob {
-    width: clamp(84px, 21vw, 106px);
-    height: clamp(84px, 21vw, 106px);
+    width: clamp(68px, 18vw, 90px);
+    height: clamp(68px, 18vw, 90px);
   }
 
   .app.vstick-active .v-number-btn {
-    width: clamp(64px, 16vw, 86px);
-    height: clamp(64px, 16vw, 86px);
-    font-size: clamp(24px, 6vw, 34px);
+    width: clamp(54px, 13vw, 72px);
+    height: clamp(54px, 13vw, 72px);
+    font-size: clamp(20px, 5vw, 28px);
   }
 
   .app.vstick-active .v-action-btn {
-    width: clamp(146px, 38vw, 192px);
-    height: clamp(146px, 38vw, 192px);
-    font-size: clamp(24px, 5.6vw, 30px);
+    width: clamp(124px, 31vw, 166px);
+    height: clamp(124px, 31vw, 166px);
+    font-size: clamp(22px, 5vw, 28px);
   }
 
   .app.vstick-active .v-pause-btn {
-    min-width: clamp(176px, 44vw, 244px);
-    height: clamp(60px, 14vw, 84px);
-    font-size: clamp(22px, 5vw, 28px);
+    min-width: clamp(144px, 36vw, 192px);
+    height: clamp(48px, 11vw, 64px);
+    font-size: clamp(18px, 4.4vw, 24px);
   }
 }
 
@@ -806,7 +828,7 @@ body {
       calc(100vw - 4px)
     );
     max-width: 100%;
-    padding-bottom: calc(80px + env(safe-area-inset-bottom));
+    padding-bottom: calc(66px + env(safe-area-inset-bottom));
     gap: 0;
   }
 
@@ -852,7 +874,7 @@ body {
     align-items: stretch;
     width: 100%;
     max-width: none;
-    padding: clamp(10px, 2vh, 20px) 4px calc(90px + env(safe-area-inset-bottom));
+    padding: clamp(8px, 1.8vh, 16px) 4px calc(74px + env(safe-area-inset-bottom));
     pointer-events: none;
   }
 
@@ -872,18 +894,18 @@ body {
     width: var(--landscape-side-space);
     align-items: center;
     justify-content: center;
-    gap: 28px;
+    gap: 18px;
     padding: 0;
   }
 
   .app.vstick-active .vstick-base {
-    width: clamp(156px, calc(var(--landscape-side-space) - 8px), 236px);
-    height: clamp(156px, calc(var(--landscape-side-space) - 8px), 236px);
+    width: clamp(128px, calc(var(--landscape-side-space) - 18px), 188px);
+    height: clamp(128px, calc(var(--landscape-side-space) - 18px), 188px);
   }
 
   .app.vstick-active .vstick-knob {
-    width: clamp(74px, calc(var(--landscape-side-space) * 0.52), 122px);
-    height: clamp(74px, calc(var(--landscape-side-space) * 0.52), 122px);
+    width: clamp(62px, calc(var(--landscape-side-space) * 0.44), 92px);
+    height: clamp(62px, calc(var(--landscape-side-space) * 0.44), 92px);
   }
 
   .app.vstick-active .v-number-row {
@@ -891,22 +913,22 @@ body {
   }
 
   .app.vstick-active .v-number-btn {
-    width: clamp(46px, calc((var(--landscape-side-space) - 24px) / 3), 66px);
-    height: clamp(46px, calc((var(--landscape-side-space) - 24px) / 3), 66px);
-    font-size: clamp(22px, calc(var(--landscape-side-space) * 0.16), 30px);
+    width: clamp(40px, calc((var(--landscape-side-space) - 28px) / 3), 56px);
+    height: clamp(40px, calc((var(--landscape-side-space) - 28px) / 3), 56px);
+    font-size: clamp(18px, calc(var(--landscape-side-space) * 0.135), 24px);
   }
 
   .app.vstick-active .v-action-btn {
-    width: clamp(146px, calc(var(--landscape-side-space) - 14px), 208px);
-    height: clamp(146px, calc(var(--landscape-side-space) - 14px), 208px);
-    font-size: clamp(23px, calc(var(--landscape-side-space) * 0.16), 30px);
+    width: clamp(118px, calc(var(--landscape-side-space) - 20px), 168px);
+    height: clamp(118px, calc(var(--landscape-side-space) - 20px), 168px);
+    font-size: clamp(19px, calc(var(--landscape-side-space) * 0.13), 26px);
   }
 
   .app.vstick-active .v-bottom-row {
     position: absolute;
     left: 0;
     right: 0;
-    bottom: calc(8px + env(safe-area-inset-bottom));
+    bottom: calc(6px + env(safe-area-inset-bottom));
     display: flex;
     justify-content: center;
     width: 100%;

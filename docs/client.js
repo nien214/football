@@ -604,15 +604,25 @@ function updateFieldLayout() {
   const controlsVisible = shouldShowVirtualControls();
   const landscapeVStick = controlsVisible && !portrait;
   const sideSpace = landscapeVStick
-    ? Math.round(clamp(viewportW * 0.24, 140, 280))
+    ? Math.round(clamp(viewportW * 0.19, 118, 204))
     : 0;
-  let reservedHeight = portrait ? 148 : 92;
+  const horizontalPadding = portrait
+    ? controlsVisible
+      ? 54
+      : 36
+    : controlsVisible
+      ? 40
+      : 52;
+  let reservedHeight = portrait ? 176 : 126;
   if (controlsVisible) {
-    reservedHeight += portrait ? 330 : 88;
+    reservedHeight += portrait ? 240 : 104;
   }
   const maxByHeight = ((viewportH - reservedHeight) * FIELD_WIDTH) / FIELD_HEIGHT;
-  const maxByWidth = viewportW - (portrait ? 16 : 20) - sideSpace * 2;
-  const fieldMaxWidth = Math.floor(clamp(Math.min(1000, maxByHeight, maxByWidth), 280, 1000));
+  const maxByWidth = viewportW - horizontalPadding - sideSpace * 2;
+  const fieldCap = portrait ? 940 : 1000;
+  const fieldMaxWidth = Math.floor(
+    clamp(Math.min(fieldCap, maxByHeight, maxByWidth), 260, fieldCap)
+  );
   document.documentElement.style.setProperty("--field-max-width", `${fieldMaxWidth}px`);
   document.documentElement.style.setProperty("--landscape-side-space", `${sideSpace}px`);
 }
